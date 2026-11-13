@@ -92,6 +92,8 @@ logs/
 *.sqlite
 *.sqlite3
 *.db-journal
+AGENTS.md
+dia.pdf
 
 # ------------------
 # Videos and audio recordings
