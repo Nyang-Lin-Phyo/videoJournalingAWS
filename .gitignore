@@ -26,6 +26,8 @@ coverage/
 .env.*
 !.env.example
 AGENTS.md
+dia.pdf
+*Zone.Identifier
 
 # ==========================================
 # Local database and storage
