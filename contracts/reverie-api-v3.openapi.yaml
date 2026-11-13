@@ -1,0 +1,202 @@
+openapi: 3.0.3
+info:
+  title: Reverie authenticated ingestion and journal API
+  version: 3.0.0-draft
+  description: |
+    Proposed TEAM CONTRACT for the next migration. This is NOT yet deployed.
+    Google sign-in happens through Cognito; send the Cognito ACCESS token as
+    Authorization: Bearer <token> to API Gateway. API Gateway verifies the JWT.
+    Lambda derives the userId from requestContext.authorizer.jwt.claims.sub
+    and MUST authorize ownership for each per-journal operation.
+    No userId or email is accepted from the browser as an ownership assertion.
+    This draft preserves Part 1/2 upload_id and result JSON field names.
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com
+    variables:
+      apiId:
+        default: YOUR_API_ID
+      region:
+        default: us-east-1
+security:
+  - CognitoAccessToken: []
+tags:
+  - name: Uploads
+  - name: Journals
+paths:
+  /uploads:
+    post:
+      tags: [Uploads]
+      operationId: createUpload
+      summary: Create user-owned journal and get presigned S3 form
+      description: |
+        Requires a Cognito ACCESS token. Server generates upload_id and owner
+        using the verified token's sub. It first creates a DynamoDB journal
+        item with awaiting_upload status, then returns a five-minute S3 POST form.
+        The S3 key changes from uploads/<uuid>.mp4 to
+        uploads/<cognito-sub>/<uuid>.mp4. Browser must submit all signed fields
+        unchanged and the file last. Do NOT send the bearer token to S3.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUploadRequest'
+      responses:
+        '200':
+          description: Journal created and upload authorization granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUploadResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { description: Rate limited }
+  /uploads/{upload_id}/result:
+    get:
+      tags: [Uploads]
+      operationId: getUploadResult
+      summary: Read current user's processing status and insights
+      description: |
+        Lambda first looks up upload_id in DynamoDB and checks userId ==
+        verified Cognito sub. Unknown or another user's IDs both return 404.
+        Transcript may be read server-side from private S3 transcriptKey.
+      parameters:
+        - $ref: '#/components/parameters/UploadId'
+      responses:
+        '200':
+          description: Existing owned journal, any processing state
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalResult'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /journals:
+    get:
+      tags: [Journals]
+      operationId: listMyJournals
+      summary: Query journal history for current user
+      description: |
+        Query the DynamoDB userId-createdAt-index with the verified user's sub
+        as Partition Key. Never scan all journals and filter in the frontend.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: next_token
+          in: query
+          schema: { type: string }
+          description: Opaque cursor bound to current user
+      responses:
+        '200':
+          description: Newest-first journal summaries for the current user only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalList'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    CognitoAccessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Cognito user-pool OAuth access token (not Google ID token)
+  parameters:
+    UploadId:
+      name: upload_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    Unauthorized:
+      description: Missing, expired or invalid JWT
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    NotFound:
+      description: Journal not found or not owned by this user
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    CreateUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [filename, content_type, size]
+      properties:
+        filename: { type: string, example: myjournal.mp4 }
+        content_type: { type: string, enum: [video/mp4] }
+        size: { type: integer, minimum: 1, maximum: 31457280 }
+    SignedPost:
+      type: object
+      required: [method, url, fields]
+      properties:
+        method: { type: string, enum: [POST] }
+        url: { type: string, format: uri }
+        fields:
+          type: object
+          description: Return all S3-signed fields verbatim, including key and signature
+          additionalProperties: { type: string }
+    CreateUploadResponse:
+      type: object
+      required: [upload_id, object_key, max_bytes, expires_in, upload]
+      properties:
+        upload_id: { type: string, format: uuid }
+        object_key: { type: string, example: 'uploads/cognito-sub/uuid.mp4' }
+        max_bytes: { type: integer, example: 31457280 }
+        expires_in: { type: integer, example: 300 }
+        upload: { $ref: '#/components/schemas/SignedPost' }
+    Status:
+      type: string
+      enum: [awaiting_upload, queued, transcribing, analyzing, completed, failed]
+    Analysis:
+      type: object
+      additionalProperties: false
+      required: [sentiment, emotions, themes, summary]
+      properties:
+        sentiment: { type: string, enum: [positive, negative, neutral] }
+        emotions: { type: array, items: { type: string } }
+        themes: { type: array, items: { type: string } }
+        summary: { type: string }
+    JournalResult:
+      type: object
+      required: [upload_id, status, transcript, analysis, error]
+      properties:
+        upload_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/Status' }
+        transcript: { type: string, nullable: true }
+        analysis:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Analysis'
+        error: { type: string, nullable: true }
+    JournalSummary:
+      type: object
+      required: [upload_id, created_at, status]
+      properties:
+        upload_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/Status' }
+        sentiment: { type: string, nullable: true, enum: [positive, negative, neutral] }
+    JournalList:
+      type: object
+      required: [journals, next_token]
+      properties:
+        journals:
+          type: array
+          items: { $ref: '#/components/schemas/JournalSummary' }
+        next_token: { type: string, nullable: true }

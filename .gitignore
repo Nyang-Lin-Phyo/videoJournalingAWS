@@ -125,3 +125,17 @@ Thumbs.db
 *.swp
 *.swo
 *~
+# Part 3 generated AWS resource/config files (add to root .gitignore)
+infra/.phase3-resource-ids.env
+infra/.phase3-cutover.env
+infra/phase3-generated/
+# Cognito / CloudFront non-secret deployment state and generated JSON
+infra/.auth-hosting.env
+infra/.cognito.env
+infra/.phase3-cutover.env
+infra/auth-generated/
+infra/phase3-generated/
+# Local Vite OAuth config (public values, but deployment-specific)
+apps/web/.env.local
+apps/web/.env.production
+infra/.auth-api.env

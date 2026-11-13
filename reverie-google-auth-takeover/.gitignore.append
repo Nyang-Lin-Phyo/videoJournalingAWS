@@ -1,0 +1,10 @@
+# Cognito / CloudFront non-secret deployment state and generated JSON
+infra/.auth-hosting.env
+infra/.cognito.env
+infra/.phase3-cutover.env
+infra/auth-generated/
+infra/phase3-generated/
+# Local Vite OAuth config (public values, but deployment-specific)
+apps/web/.env.local
+apps/web/.env.production
+infra/.auth-api.env

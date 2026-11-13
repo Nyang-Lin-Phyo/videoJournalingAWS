@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { useMockApi } from "./api/client";
 import { Icon } from "./components/Icon";
-import { CloudIngestApp } from "./cloud/CloudIngestApp";
+import { CloudAuthApp } from "./cloud/CloudAuthApp";
 import { JournalListPage } from "./pages/JournalListPage";
 import { UploadPage } from "./pages/UploadPage";
 import { JournalDetailPage } from "./pages/JournalDetailPage";
@@ -13,7 +13,7 @@ export default function App() {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }, [location.pathname]);
   if (import.meta.env.VITE_CLOUD_INGEST_ONLY === "true") {
-    return <CloudIngestApp />;
+    return <CloudAuthApp />;
   }
   return (
     <div className="app-shell">
