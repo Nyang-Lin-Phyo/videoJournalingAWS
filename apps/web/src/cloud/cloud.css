@@ -1,0 +1,13 @@
+
+.cloud-upload-success { border: 1px solid #87b3a3; border-radius: 12px; padding: 14px 16px; margin-top: 18px; overflow-wrap: anywhere; }
+.cloud-upload-success p { margin: 7px 0 0; font-size: 0.875rem; }
+.cloud-upload-success code { word-break: break-word; }
+.cloud-progress-wrap { display: flex; gap: 10px; align-items: center; margin-top: 8px; width: 100%; }
+.cloud-progress-wrap progress { width: min(250px, 75%); height: 12px; }
+.cloud-progress-wrap span { font-size: .8rem; }
+
+.cloud-results { display: grid; gap: 18px; margin-top: 24px; }
+.cloud-results code { overflow-wrap: anywhere; }
+.cloud-transcript { margin-top: 18px; }
+.cloud-transcript summary { cursor: pointer; font-weight: 600; }
+.cloud-transcript p { white-space: pre-wrap; line-height: 1.6; }

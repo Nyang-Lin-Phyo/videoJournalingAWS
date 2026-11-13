@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UploadAnalysisResult",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "upload_id": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["queued", "transcribing", "analyzing", "completed", "failed"]},
+    "transcript": {"type": ["string", "null"]},
+    "analysis": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "sentiment": {"enum": ["positive", "negative", "neutral"]},
+            "emotions": {"type": "array", "items": {"type": "string"}},
+            "themes": {"type": "array", "items": {"type": "string"}},
+            "summary": {"type": "string"}
+          },
+          "required": ["sentiment", "emotions", "themes", "summary"]
+        }
+      ]
+    },
+    "error": {"type": ["string", "null"]}
+  },
+  "required": ["upload_id", "status", "transcript", "analysis", "error"]
+}

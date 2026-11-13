@@ -1,0 +1,53 @@
+openapi: 3.0.3
+info:
+  title: Video Journal Ingestion API (demo)
+  version: 1.0.0
+  description: Anonymous short-lived upload signing only; not for personal journals. New Part 1 contract; original local API remains unchanged.
+paths:
+  /uploads:
+    post:
+      summary: Sign an MP4 upload directly to private S3
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [filename, content_type, size]
+              properties:
+                filename: {type: string, example: demo.mp4}
+                content_type: {type: string, enum: [video/mp4]}
+                size: {type: integer, minimum: 1, maximum: 31457280}
+      responses:
+        '200':
+          description: Short-lived S3 upload form
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [upload_id, object_key, max_bytes, expires_in, upload]
+                properties:
+                  upload_id: {type: string, format: uuid}
+                  object_key: {type: string, example: uploads/550e8400-e29b-41d4-a716-446655440000.mp4}
+                  max_bytes: {type: integer, example: 31457280}
+                  expires_in: {type: integer, example: 300}
+                  upload:
+                    type: object
+                    required: [method, url, fields]
+                    properties:
+                      method: {type: string, enum: [POST]}
+                      url: {type: string, format: uri}
+                      fields:
+                        type: object
+                        additionalProperties: {type: string}
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties: {error: {type: string}}
+        '500':
+          description: Internal error

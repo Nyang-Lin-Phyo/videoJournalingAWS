@@ -1,61 +1,127 @@
-# ==========================================
+
+# ==================================================
+# VIDEO JOURNALING AWS - .gitignore
+# ==================================================
+
+# ------------------
 # Python
-# ==========================================
-__pycache__/
-*.py[cod]
+# ------------------
 .venv/
 venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
 
-# ==========================================
-# Node.js / React
-# ==========================================
+# ------------------
+# Node.js / React / Vite
+# ------------------
 node_modules/
 dist/
+dist-ssr/
 coverage/
 .vite/
+.npm/
+*.tsbuildinfo
 
-# ==========================================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Keep package.json and package-lock.json tracked.
+
+# ------------------
 # Environment variables and secrets
-# ==========================================
+# ------------------
 .env
 .env.*
 !.env.example
-AGENTS.md
-dia.pdf
-*Zone.Identifier
+!.env.*.example
 
-# ==========================================
-# Local database and storage
-# ==========================================
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*credentials*.json
+*secret-value*.txt
+secrets.json
+secrets/
+
+# ------------------
+# AWS deployment generated files
+# ------------------
+infra/.resource-ids.env
+infra/.part2-resource-ids.env
+infra/part2-generated/
+infra/upload-signer.zip
+infra/*.zip
+
+infra/*-policy.json
+infra/*-cors.json
+infra/*-notifications.json
+infra/lambda-trust.json
+
+.aws-sam/
+cdk.out/
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Keep AWS Lambda Python source and deployment
+# shell scripts tracked.
+
+# ------------------
+# Local databases and runtime data
+# ------------------
 data/
+tmp/
+temp/
+.cache/
+logs/
+*.log
 *.db
 *.sqlite
 *.sqlite3
+*.db-journal
 
-# ==========================================
-# Uploaded videos and audio
-# ==========================================
+# ------------------
+# Videos and audio recordings
+# ------------------
 *.mp4
 *.mov
+*.avi
+*.mkv
 *.webm
 *.wav
 *.mp3
+*.m4a
+*.flac
 
-# ==========================================
-# OS and editor files
-# ==========================================
-.DS_Store
-Thumbs.db
+# ------------------
+# Downloaded deployment archives
+# ------------------
+videoJournalingLocalHost.zip
+videojournal-*.zip
+videojournal-*/
+videojournal-part*/
+videojournal-elevenlabs*/
+
+# ------------------
+# IDE and OS
+# ------------------
 .vscode/
 .idea/
-
-# ==========================================
-# Logs
-# ==========================================
-*.log
-logs/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
