@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JournalAnalysis",
+  "description": "Structured emotional analysis of a video journal transcript.",
+  "type": "object",
+  "properties": {
+    "sentiment": {
+      "type": "string",
+      "enum": ["positive", "negative", "neutral"],
+      "description": "Overall sentiment expressed in the journal."
+    },
+    "emotions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Emotions identified from the transcript."
+    },
+    "themes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Main topics discussed in the journal."
+    },
+    "summary": {
+      "type": "string",
+      "description": "A short natural-language summary of the journal."
+    }
+  },
+  "required": [
+    "sentiment",
+    "emotions",
+    "themes",
+    "summary"
+  ],
+  "additionalProperties": false
+}

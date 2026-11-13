@@ -1,0 +1,13 @@
+# Runtime dependencies for services/processor (pinned for reproducibility).
+# faster-whisper and google-genai are imported lazily and are NOT required
+# for mock-mode (milestone P1) operation or its tests.
+pydantic==2.14.1
+python-dotenv==1.2.4
+
+# Real-mode backends (milestones P2/P3; lazy imports inside real branches).
+faster-whisper==1.2.1
+google-genai==2.33.0
+
+# Test-only.
+pytest==9.1.1
+jsonschema==4.26.0

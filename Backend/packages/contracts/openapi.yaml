@@ -1,0 +1,184 @@
+openapi: 3.1.0
+
+info:
+  title: Video Journaling API
+  version: 0.1.0
+  description: >
+    Local REST API for uploading video journals,
+    processing them with AI, and retrieving results.
+
+servers:
+  - url: http://localhost:8000
+    description: Local FastAPI server
+
+paths:
+  /api/journals:
+    post:
+      summary: Create a journal
+      operationId: createJournal
+      description: >
+        Creates a new journal in awaiting_upload status.
+        Returns the journal and a relative upload URL.
+      responses:
+        '201':
+          description: Journal created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [journal, upload_url]
+                properties:
+                  journal:
+                    $ref: './journal.schema.json'
+                  upload_url:
+                    type: string
+                    description: Path relative to the API server.
+                    example: /api/journals/123/video
+
+    get:
+      summary: List journals
+      operationId: listJournals
+      description: Returns journals newest first.
+      responses:
+        '200':
+          description: Journal list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [journals]
+                properties:
+                  journals:
+                    type: array
+                    items:
+                      $ref: './journal.schema.json'
+
+  /api/journals/{journal_id}:
+    parameters:
+      - $ref: '#/components/parameters/JournalId'
+
+    get:
+      summary: Get journal details
+      operationId: getJournal
+      responses:
+        '200':
+          description: Journal found
+          content:
+            application/json:
+              schema:
+                $ref: './journal.schema.json'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete a journal
+      operationId: deleteJournal
+      description: Deletes journal metadata and local video.
+      responses:
+        '204':
+          description: Journal deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/journals/{journal_id}/video:
+    parameters:
+      - $ref: '#/components/parameters/JournalId'
+
+    put:
+      summary: Upload journal video
+      operationId: uploadJournalVideo
+      description: >
+        Uploads a raw MP4 file, maximum 30 MB.
+        Does not start AI processing.
+        Only permitted while awaiting_upload.
+      requestBody:
+        required: true
+        content:
+          video/mp4:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '204':
+          description: Video uploaded successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: Video exceeds upload size limit
+        '415':
+          description: Unsupported media type
+
+    get:
+      summary: Stream journal video
+      operationId: getJournalVideo
+      responses:
+        '200':
+          description: MP4 video
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/journals/{journal_id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/JournalId'
+
+    post:
+      summary: Start journal processing
+      operationId: completeJournalUpload
+      description: >
+        Confirms that a video was uploaded and queues
+        the journal for transcription and AI analysis.
+        Only permitted while awaiting_upload with a
+        successfully uploaded video.
+      responses:
+        '202':
+          description: Processing queued
+          content:
+            application/json:
+              schema:
+                $ref: './journal.schema.json'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  parameters:
+    JournalId:
+      name: journal_id
+      in: path
+      required: true
+      description: Unique journal identifier.
+      schema:
+        type: string
+
+  schemas:
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+
+  responses:
+    NotFound:
+      description: Journal not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Conflict:
+      description: Operation not allowed in current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

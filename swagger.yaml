@@ -1,0 +1,305 @@
+openapi: 3.0.3
+
+info:
+  title: Video Journaling API
+  version: 0.1.0
+  description: >
+    REST API for the AI video journaling platform.
+    Create a journal, upload a raw MP4 video, queue it for
+    transcription and AI analysis, then fetch the transcript,
+    sentiment and emotions for the completed journal.
+
+servers:
+  - url: http://localhost:8000
+    description: Local FastAPI server
+
+tags:
+  - name: journals
+    description: Journal lifecycle, video upload/streaming and processing.
+
+paths:
+  /api/journals:
+    post:
+      tags: [journals]
+      summary: Create a journal
+      operationId: createJournal
+      description: >
+        Creates a new journal in `awaiting_upload` status.
+        Returns the journal together with the relative URL
+        used to upload the video.
+      responses:
+        '201':
+          description: Journal created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateJournalResponse'
+              example:
+                journal:
+                  id: "b3f1c2d4-0000-4000-8000-000000000001"
+                  created_at: "2026-11-13T12:00:00Z"
+                  status: awaiting_upload
+                  video_url: null
+                  transcript: null
+                  analysis: null
+                  error_message: null
+                upload_url: /api/journals/b3f1c2d4-0000-4000-8000-000000000001/video
+
+    get:
+      tags: [journals]
+      summary: List journals
+      operationId: listJournals
+      description: Returns all journals, newest first.
+      responses:
+        '200':
+          description: Journal list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalListResponse'
+
+  /api/journals/{journal_id}:
+    parameters:
+      - $ref: '#/components/parameters/JournalId'
+
+    get:
+      tags: [journals]
+      summary: Get journal details
+      operationId: getJournal
+      responses:
+        '200':
+          description: Journal found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Journal'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [journals]
+      summary: Delete a journal
+      operationId: deleteJournal
+      description: >
+        Deletes the journal metadata and its stored video.
+        The video file is staged for removal first and can be
+        restored if the database deletion fails.
+      responses:
+        '204':
+          description: Journal deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          description: Video cleanup failed after metadata deletion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/journals/{journal_id}/video:
+    parameters:
+      - $ref: '#/components/parameters/JournalId'
+
+    put:
+      tags: [journals]
+      summary: Upload journal video
+      operationId: uploadJournalVideo
+      description: >
+        Uploads a raw MP4 file (maximum 30 MiB) as the request body.
+        Does not start AI processing. Permitted only while the
+        journal is in `awaiting_upload` status and has no video yet.
+      requestBody:
+        required: true
+        content:
+          video/mp4:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '204':
+          description: Video uploaded successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: Video exceeds the 30 MiB upload limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Unsupported media type (expected video/mp4)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [journals]
+      summary: Stream journal video
+      operationId: getJournalVideo
+      description: Returns the stored MP4 video for the journal.
+      responses:
+        '200':
+          description: MP4 video
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Journal video is not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/journals/{journal_id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/JournalId'
+
+    post:
+      tags: [journals]
+      summary: Start journal processing
+      operationId: completeJournalUpload
+      description: >
+        Confirms that the video upload finished and queues the
+        journal for transcription and AI analysis. Processing runs
+        in the background after the response is sent.
+        Permitted only while the journal is in `awaiting_upload`
+        status with a successfully uploaded video.
+      responses:
+        '202':
+          description: Processing queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Journal'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  parameters:
+    JournalId:
+      name: journal_id
+      in: path
+      required: true
+      description: Unique journal identifier.
+      schema:
+        type: string
+
+  schemas:
+    JournalAnalysis:
+      type: object
+      description: Structured emotional analysis of a video journal transcript.
+      required: [sentiment, emotions, themes, summary]
+      properties:
+        sentiment:
+          type: string
+          enum: [positive, negative, neutral]
+          description: Overall sentiment expressed in the journal.
+        emotions:
+          type: array
+          description: Emotions identified from the transcript.
+          uniqueItems: true
+          items:
+            type: string
+        themes:
+          type: array
+          description: Main topics discussed in the journal.
+          uniqueItems: true
+          items:
+            type: string
+        summary:
+          type: string
+          description: A short natural-language summary of the journal.
+
+    Journal:
+      type: object
+      description: A video journal entry and its processing results.
+      required: [id, created_at, status, video_url, transcript, analysis, error_message]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Unique journal identifier assigned by the backend.
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp in ISO 8601 format.
+        status:
+          type: string
+          enum:
+            - awaiting_upload
+            - queued
+            - transcribing
+            - analyzing
+            - completed
+            - failed
+          description: Current processing state of the journal.
+        video_url:
+          type: string
+          nullable: true
+          description: URL used to retrieve the video, or null before upload.
+        transcript:
+          type: string
+          nullable: true
+          description: Speech transcription, or null until available.
+        analysis:
+          allOf:
+            - $ref: '#/components/schemas/JournalAnalysis'
+          nullable: true
+          description: Emotional analysis results, or null until available.
+        error_message:
+          type: string
+          nullable: true
+          description: Error details if processing fails.
+
+    CreateJournalResponse:
+      type: object
+      required: [journal, upload_url]
+      properties:
+        journal:
+          $ref: '#/components/schemas/Journal'
+        upload_url:
+          type: string
+          description: Upload path relative to the API server.
+          example: /api/journals/123/video
+
+    JournalListResponse:
+      type: object
+      required: [journals]
+      properties:
+        journals:
+          type: array
+          description: Journals ordered newest first.
+          items:
+            $ref: '#/components/schemas/Journal'
+
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+          description: Human readable error message.
+
+  responses:
+    NotFound:
+      description: Journal not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Conflict:
+      description: Operation not allowed in the journal's current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Journal",
+  "description": "A video journal entry and its processing results.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique journal identifier assigned by the backend."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Creation timestamp in ISO 8601 format."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "awaiting_upload",
+        "queued",
+        "transcribing",
+        "analyzing",
+        "completed",
+        "failed"
+      ]
+    },
+    "video_url": {
+      "type": ["string", "null"],
+      "description": "URL used to retrieve the video, or null before upload."
+    },
+    "transcript": {
+      "type": ["string", "null"],
+      "description": "Speech transcription, or null until available."
+    },
+    "analysis": {
+      "oneOf": [
+        {
+          "$ref": "analysis.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Emotional analysis results, or null until available."
+    },
+    "error_message": {
+      "type": ["string", "null"],
+      "description": "Error details if processing fails."
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "status",
+    "video_url",
+    "transcript",
+    "analysis",
+    "error_message"
+  ],
+  "additionalProperties": false
+}
