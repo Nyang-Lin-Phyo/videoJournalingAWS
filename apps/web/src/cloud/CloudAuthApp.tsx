@@ -32,7 +32,7 @@ function AuthenticatedCloud() {
       <span>Signed in as {auth.user?.profile.email ?? "Google user"}</span>
       <button type="button" onClick={() => void signOut()}>Sign out</button>
     </div>
-    <CloudIngestApp />
+    <CloudIngestApp key={auth.user?.profile.sub ?? "anonymous"} />
   </>;
 }
 

@@ -1,4 +1,4 @@
-"""Authenticated POST /uploads, same response fields as the v3 contract."""
+"""Authenticated POST /uploads, with required journal title, retaining signed-upload response shape."""
 import json, os, re
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -29,9 +29,15 @@ def handler(event, context):
         request = json.loads(event.get('body') or '{}')
     except (TypeError, ValueError):
         return respond(400, {'error':'Invalid JSON'})
-    if not isinstance(request, dict) or set(request) != {'filename','content_type','size'}:
-        return respond(400, {'error':'Expected filename, content_type and size'})
+    if not isinstance(request, dict) or set(request) != {'filename','content_type','size','title'}:
+        return respond(400, {'error':'Expected filename, content_type, size and title'})
     filename, mime, size = request['filename'], request['content_type'], request['size']
+    raw_title = request['title']
+    if not isinstance(raw_title, str):
+        return respond(400, {'error':'Title must be a string'})
+    title = raw_title.strip()
+    if not 1 <= len(title) <= 100 or any(ord(ch) < 32 or ord(ch) == 127 for ch in title):
+        return respond(400, {'error':'Title must contain 1-100 visible characters'})
     if not (isinstance(filename,str) and filename.lower().endswith('.mp4') and len(filename) <= 255
             and mime == 'video/mp4' and type(size) is int and 1 <= size <= MAX_BYTES):
         return respond(400, {'error':'Only MP4 files up to 30 MiB are allowed'})
@@ -40,7 +46,7 @@ def handler(event, context):
     now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')
     item = {'uploadId': upload_id, 'userId': sub, 'createdAt': now,
             'userCreatedAt': f'{now}#{upload_id}', 'videoKey': key,
-            'status': 'awaiting_upload', 'attempt': 0, 'size': size}
+            'status': 'awaiting_upload', 'attempt': 0, 'size': size, 'title': title}
     table.put_item(Item=item, ConditionExpression='attribute_not_exists(uploadId)')
     try:
         signed = s3.generate_presigned_post(

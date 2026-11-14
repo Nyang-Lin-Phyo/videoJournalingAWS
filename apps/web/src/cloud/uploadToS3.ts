@@ -29,7 +29,7 @@ function assertSignedUpload(value: unknown): asserts value is SignedUpload {
   }
 }
 
-export async function signUpload(file: File, accessToken: string, signal?: AbortSignal): Promise<SignedUpload> {
+export async function signUpload(file: File, title: string, accessToken: string, signal?: AbortSignal): Promise<SignedUpload> {
   const invalid = validateVideo(file);
   if (invalid) throw new Error(invalid);
   if (!configuredUrl) throw new Error("VITE_INGEST_API_URL is not configured in the frontend build.");
@@ -37,7 +37,7 @@ export async function signUpload(file: File, accessToken: string, signal?: Abort
   const response = await fetch(`${api}/uploads`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
-    body: JSON.stringify({ filename: file.name, content_type: "video/mp4", size: file.size }),
+    body: JSON.stringify({ filename: file.name, content_type: "video/mp4", size: file.size, title: title.trim() }),
     signal,
   });
   const data: unknown = await response.json().catch(() => null);
@@ -85,13 +85,14 @@ export function postToS3(
 
 export async function uploadMp4(
   file: File,
+  title: string,
   onStage: (stage: "signing" | "uploading") => void,
   onProgress: (percent: number) => void,
   accessToken: string,
   signal?: AbortSignal,
 ) {
   onStage("signing");
-  const signed = await signUpload(file, accessToken, signal);
+  const signed = await signUpload(file, title, accessToken, signal);
   onStage("uploading");
   await postToS3(signed, file, onProgress, signal);
   return { upload_id: signed.upload_id, object_key: signed.object_key };

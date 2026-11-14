@@ -6,8 +6,32 @@
 .cloud-progress-wrap progress { width: min(250px, 75%); height: 12px; }
 .cloud-progress-wrap span { font-size: .8rem; }
 
-.cloud-results { display: grid; gap: 18px; margin-top: 24px; }
-.cloud-results code { overflow-wrap: anywhere; }
-.cloud-transcript { margin-top: 18px; }
-.cloud-transcript summary { cursor: pointer; font-weight: 600; }
-.cloud-transcript p { white-space: pre-wrap; line-height: 1.6; }
+/* History + title extension */
+.journal-title-field { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.journal-title-field input { width: 100%; padding: 12px; border: 1px solid #d9c3b5; border-radius: 7px; font: inherit; background: #fffefa; color: #43332e; }
+.main-nav button.nav-link {
+  border: 0;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+}.history-intro { margin-bottom: 22px; }
+.history-entries { display: flex; flex-direction: column; gap: 12px; }
+.history-entry { overflow: hidden; }
+.history-toggle { border: 0; width: 100%; text-align: left; background: transparent; display: flex; gap: 14px; justify-content: space-between; align-items: center; cursor: pointer; padding: 20px; color: inherit; font: inherit; }
+.history-toggle:hover { background: #faf4ec; }
+.history-title { font-weight: 650; display: block; }
+.history-date { color: #81746d; font-size: .85rem; white-space: nowrap; }
+.history-detail { padding: 20px; border-top: 1px solid #eadfd4; }
+.history-detail video { display: block; width: min(100%, 680px); max-height: 420px; background: #262626; border-radius: 9px; margin: 12px 0 18px; }
+.history-status { color: #766a64; font-size: .88rem; }
+
+.history-detail .analysis-panel { margin-top: 18px; }
+
+.history-title-right { display:flex; align-items:center; gap:12px; }
+.history-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:14px; }
+.history-delete { border-color:#ba7974 !important; color:#9e3330 !important; }
+.history-edit-form { display:flex; flex-wrap:wrap; align-items:center; gap:10px; width:100%; }
+.history-edit-form label { font-weight:600; }
+.history-edit-form input { font:inherit; flex:1; min-width:165px; border:1px solid #d9c3b5; border-radius:7px; background:#fffefa; padding:11px; color:#43332e; }

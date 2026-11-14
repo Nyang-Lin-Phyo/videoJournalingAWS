@@ -1,0 +1,437 @@
+openapi: 3.0.3
+info:
+  title: Reverie private video journals API
+  version: 5.0.0
+  description: Owner-scoped private journals. Google sign-in through Cognito; use the Cognito access token.
+    Video upload uses a short-lived S3 presigned POST. The browser sees the saved reflection only, never
+    the private transcript. Old journal records without a title display as Untitled. PATCH renames without
+    model work. DELETE removes the owned journal, MP4 and saved text/results after processing reaches
+    completed or failed. Delete refuses versioned S3 buckets in the MVP. Reading, renaming or deleting
+    never invokes transcription or model providers.
+servers:
+- url: https://{apiId}.execute-api.{region}.amazonaws.com
+  variables:
+    apiId:
+      default: YOUR_API_ID
+    region:
+      default: us-east-1
+security:
+- CognitoAccessToken: []
+tags:
+- name: Uploads
+- name: Journals
+paths:
+  /uploads:
+    post:
+      tags:
+      - Uploads
+      operationId: createUpload
+      summary: Create titled, user-owned journal and get presigned S3 POST form
+      description: 'Requires a Cognito ACCESS token. Request must include a nonblank title.
+
+        Server derives owner from verified Cognito sub, creates DynamoDB item, then
+
+        returns a five-minute presigned upload form. Never forward access token to S3.
+
+        '
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUploadRequest'
+      responses:
+        '200':
+          description: Journal created and upload authorization granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Rate limited
+  /uploads/{upload_id}/result:
+    get:
+      tags:
+      - Uploads
+      operationId: getUploadResult
+      summary: Retrieve current user's saved reflection and processing status
+      description: Owner-scoped result. No transcript is returned to the browser; internal transcription
+        stays private. Unknown, deleted or another user's IDs return 404.
+      parameters:
+      - $ref: '#/components/parameters/UploadId'
+      responses:
+        '200':
+          description: Existing owned journal, any processing state
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /uploads/{upload_id}/video-url:
+    get:
+      tags:
+      - Journals
+      operationId: getOwnedVideoUrl
+      summary: Generate short-lived private MP4 playback URL after ownership check
+      description: 'Only a matching Cognito sub can request the stored journal''s video.
+
+        URL is a bearer capability expiring in 900 seconds. It must not be logged or
+
+        persisted in a public location. Browser fetches S3 directly with NO JWT header.
+
+        '
+      parameters:
+      - $ref: '#/components/parameters/UploadId'
+      responses:
+        '200':
+          description: Owned private video URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoUrlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Upload not completed yet
+  /journals:
+    get:
+      tags:
+      - Journals
+      operationId: listMyJournals
+      summary: Query journal history for current user
+      description: 'Query the DynamoDB userId-createdAt-index with the verified user''s sub
+
+        as Partition Key. Never scan all journals and filter in the frontend.
+
+        '
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+      - name: next_token
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to current user
+      responses:
+        '200':
+          description: Newest-first journal summaries for the current user only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /journals/{upload_id}:
+    patch:
+      tags:
+      - Journals
+      operationId: renameMyJournal
+      summary: Rename an owned journal without rerunning its reflection
+      parameters:
+      - $ref: '#/components/parameters/UploadId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - title
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+      responses:
+        '200':
+          description: Journal title changed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - upload_id
+                - title
+                properties:
+                  upload_id:
+                    type: string
+                    format: uuid
+                  title:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Journals
+      operationId: deleteMyJournal
+      summary: Delete an owned completed/failed journal and its saved content
+      description: Disallows deletion during active upload or processing (409). Tombstones the row, deletes
+        video, transcript and legacy result objects, then deletes metadata. A partial failure (503) may
+        be retried by the owner. S3 versioning must be disabled.
+      parameters:
+      - $ref: '#/components/parameters/UploadId'
+      responses:
+        '204':
+          description: Journal, private video and stored results removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Journal still processing or versioning requires another deletion strategy
+        '503':
+          description: Cleanup incomplete; retry the request
+components:
+  securitySchemes:
+    CognitoAccessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Cognito user-pool OAuth access token (not Google ID token)
+  parameters:
+    UploadId:
+      name: upload_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthorized:
+      description: Missing, expired or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Journal not found or not owned by this user
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+  schemas:
+    ApiError:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: string
+    CreateUploadRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - filename
+      - content_type
+      - size
+      - title
+      properties:
+        filename:
+          type: string
+          example: myjournal.mp4
+        content_type:
+          type: string
+          enum:
+          - video/mp4
+        size:
+          type: integer
+          minimum: 1
+          maximum: 31457280
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Human-written journal title, trimmed by backend
+          example: A wonderful afternoon
+    SignedPost:
+      type: object
+      required:
+      - method
+      - url
+      - fields
+      properties:
+        method:
+          type: string
+          enum:
+          - POST
+        url:
+          type: string
+          format: uri
+        fields:
+          type: object
+          description: Return all S3-signed fields verbatim, including key and signature
+          additionalProperties:
+            type: string
+    CreateUploadResponse:
+      type: object
+      required:
+      - upload_id
+      - object_key
+      - max_bytes
+      - expires_in
+      - upload
+      properties:
+        upload_id:
+          type: string
+          format: uuid
+        object_key:
+          type: string
+          example: uploads/cognito-sub/uuid.mp4
+        max_bytes:
+          type: integer
+          example: 31457280
+        expires_in:
+          type: integer
+          example: 300
+        upload:
+          $ref: '#/components/schemas/SignedPost'
+    Status:
+      type: string
+      enum:
+      - awaiting_upload
+      - queued
+      - transcribing
+      - analyzing
+      - completed
+      - failed
+      - deleting
+    Analysis:
+      type: object
+      additionalProperties: false
+      required:
+      - sentiment
+      - emotions
+      - themes
+      - summary
+      properties:
+        sentiment:
+          type: string
+          enum:
+          - positive
+          - negative
+          - neutral
+        emotions:
+          type: array
+          items:
+            type: string
+        themes:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+    JournalResult:
+      type: object
+      required:
+      - upload_id
+      - status
+      - analysis
+      - error
+      - title
+      - created_at
+      properties:
+        upload_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/Status'
+        analysis:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Analysis'
+        error:
+          type: string
+          nullable: true
+        title:
+          type: string
+          example: A wonderful afternoon
+          description: Current title or Untitled for pre-title journal records
+        created_at:
+          type: string
+          format: date-time
+    JournalSummary:
+      type: object
+      required:
+      - upload_id
+      - created_at
+      - status
+      - title
+      properties:
+        upload_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/Status'
+        sentiment:
+          type: string
+          nullable: true
+          enum:
+          - positive
+          - negative
+          - neutral
+        title:
+          type: string
+          example: A wonderful afternoon
+          description: Title or Untitled for older journals
+    JournalList:
+      type: object
+      required:
+      - journals
+      - next_token
+      properties:
+        journals:
+          type: array
+          items:
+            $ref: '#/components/schemas/JournalSummary'
+        next_token:
+          type: string
+          nullable: true
+    VideoUrlResponse:
+      type: object
+      required:
+      - upload_id
+      - url
+      - expires_in
+      properties:
+        upload_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        expires_in:
+          type: integer
+          example: 900

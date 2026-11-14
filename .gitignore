@@ -141,3 +141,7 @@ infra/phase3-generated/
 apps/web/.env.local
 apps/web/.env.production
 infra/.auth-api.env
+
+# Generated v5 deployment backups, policies and temporary builds
+infra/phase5-generated/
+reverie-history-v5.zip
