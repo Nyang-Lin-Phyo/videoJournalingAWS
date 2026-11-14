@@ -29,33 +29,66 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
   const [editTitle, setEditTitle] = useState("");
   const [version, setVersion] = useState(0);
   const details = useRef(new Map<string, AnalysisResult>());
+  // Store short-lived S3 URLs, not downloaded MP4 blobs. The mounted <video>
+  // elements retain the browser's buffered content across collapse/reopen.
   const videos = useRef(new Map<string, string>());
+  const mediaElements = useRef(new Map<string, HTMLVideoElement>());
+  const [videoErrorId, setVideoErrorId] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
+  const lastLoadedListKey = useRef<string | null>(null);
 
   useEffect(() => () => {
     request.current?.abort();
-    videos.current.forEach(url => URL.revokeObjectURL(url));
+    mediaElements.current.forEach(element => element.pause());
+    mediaElements.current.clear();
     videos.current.clear();
     details.current.clear();
   }, []);
 
+  // Keep the player mounted (and its browser-managed buffer) when hidden,
+  // but never let audio continue playing after collapse or tab navigation.
   useEffect(() => {
-    if (!active || !token) return;
+    mediaElements.current.forEach((element, id) => {
+      if (!active || id !== openId) element.pause();
+    });
+  }, [active, openId]);
+
+  useEffect(() => {
+    if (!active || !token || !userSub) return;
+
+    // Keep the list cached across tab switches. A new upload or deletion
+    // changes refreshKey and explicitly invalidates this list cache.
+    const listKey = `${userSub}:${refreshKey}`;
+    if (lastLoadedListKey.current === listKey) return;
+
     const controller = new AbortController();
-    setLoadingList(true);
-    void fetchJournals(token, controller.signal)
-      .then(data => {
-        if (controller.signal.aborted) return;
-        setJournals(data.journals);
-        setNextToken(data.next_token);
-        setListError(null);
-      })
-      .catch(error => {
-        if (!controller.signal.aborted) setListError(error instanceof Error ? error.message : "Unable to load journals.");
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoadingList(false); });
-    return () => controller.abort();
-  }, [active, token, refreshKey]);
+    // Rapid tab changes cancel this short delay before any request is made.
+    const timer = window.setTimeout(() => {
+      if (controller.signal.aborted) return;
+      setLoadingList(true);
+      void fetchJournals(token, controller.signal)
+        .then(data => {
+          if (controller.signal.aborted) return;
+          setJournals(data.journals);
+          setNextToken(data.next_token);
+          lastLoadedListKey.current = listKey;
+          setListError(null);
+        })
+        .catch(error => {
+          if (!controller.signal.aborted) {
+            setListError(error instanceof Error ? error.message : "Unable to load journals.");
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoadingList(false);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [active, token, userSub, refreshKey]);
 
   async function loadMore() {
     if (!nextToken || !token || loadingMore) return;
@@ -80,6 +113,7 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
     request.current?.abort();
     request.current = null;
     setDetailError(null);
+    setVideoErrorId(null);
     setEditingId(null);
     if (openId === id) {
       setOpenId(null);
@@ -94,7 +128,11 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
     const previousDetail = details.current.get(id);
     const hasFinishedDetail = previousDetail && ["completed", "failed"].includes(previousDetail.status);
     if (hasFinishedDetail && videos.current.has(id)) {
-      setLoadingDetail(false); // Cached MP4 and reflection, no new network requests.
+      // Touch this entry so the three-player cache evicts least-recently used.
+      const cachedUrl = videos.current.get(id)!;
+      videos.current.delete(id);
+      videos.current.set(id, cachedUrl);
+      setLoadingDetail(false); // Cached player and reflection: no API call.
       return;
     }
     const controller = new AbortController();
@@ -110,18 +148,14 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
         }
         if (!videos.current.has(id) && journal.status !== "awaiting_upload") {
           const signed = await fetchVideoUrl(id, token, controller.signal);
-          // The S3 URL itself is signed. No Cognito bearer token is sent to S3.
-          const response = await fetch(signed.url, { signal: controller.signal, cache: "no-store" });
-          if (!response.ok) throw new Error(`Video download failed (HTTP ${response.status}).`);
-          const blob = await response.blob();
           if (controller.signal.aborted) return;
-          if (blob.size > 35 * 1024 * 1024) throw new Error("Unexpected video size.");
-          const url = URL.createObjectURL(blob);
-          videos.current.set(id, url);
+          // The browser loads only the data it needs through HTTP Range GETs.
+          // Do not fetch the MP4 as a Blob, and never send Cognito tokens to S3.
+          videos.current.set(id, signed.url);
           while (videos.current.size > MAX_CACHED_VIDEOS) {
             const oldest = videos.current.keys().next().value;
             if (!oldest) break;
-            URL.revokeObjectURL(videos.current.get(oldest)!);
+            mediaElements.current.get(oldest)?.pause();
             videos.current.delete(oldest);
           }
           setVersion(n => n + 1);
@@ -132,6 +166,31 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
         if (!controller.signal.aborted) setLoadingDetail(false);
       }
     })();
+  }
+
+  async function retryVideo(id: string) {
+    if (!token || !active || openId !== id || loadingDetail) return;
+    const controller = new AbortController();
+    request.current?.abort();
+    request.current = controller;
+    setDetailError(null);
+    setVideoErrorId(null);
+    setLoadingDetail(true);
+    try {
+      // A private S3 URL expires after 15 minutes. Renew only when needed.
+      const signed = await fetchVideoUrl(id, token, controller.signal);
+      if (controller.signal.aborted) return;
+      videos.current.delete(id);
+      videos.current.set(id, signed.url);
+      setVersion(n => n + 1);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setVideoErrorId(id);
+        setDetailError(error instanceof Error ? error.message : "Unable to reload video.");
+      }
+    } finally {
+      if (!controller.signal.aborted) setLoadingDetail(false);
+    }
   }
 
   async function saveTitle(journal: JournalSummary) {
@@ -164,8 +223,7 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
     try {
       request.current?.abort();
       await deleteJournal(journal.upload_id, token);
-      const cached = videos.current.get(journal.upload_id);
-      if (cached) URL.revokeObjectURL(cached);
+      mediaElements.current.get(journal.upload_id)?.pause();
       videos.current.delete(journal.upload_id);
       details.current.delete(journal.upload_id);
       setJournals(old => old.filter(entry => entry.upload_id !== journal.upload_id));
@@ -183,9 +241,7 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
     }
   }
 
-  void version; // Force updates after a background MP4 Blob has been cached.
-  const opened = openId ? details.current.get(openId) : undefined;
-  const videoUrl = openId ? videos.current.get(openId) : undefined;
+  void version; // Trigger a render when a private video URL becomes available.
 
   return (
     <>
@@ -212,15 +268,43 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
                 <Icon name={openId === journal.upload_id ? "back" : "arrow"} size={18}/>
               </span>
             </button>
-            {openId === journal.upload_id && (
-              <div className="history-detail" id={`journal-content-${journal.upload_id}`}>
+            {/* Leave previously opened players mounted but hidden. That lets the
+                browser reuse buffered video data when a journal is reopened. */}
+            {(openId === journal.upload_id || videos.current.has(journal.upload_id)) && (
+              <div className="history-detail" id={`journal-content-${journal.upload_id}`}
+                style={{ display: openId === journal.upload_id ? undefined : "none" }}
+                aria-hidden={openId !== journal.upload_id}>
                 {loadingDetail && <p className="muted">Loading your saved moment…</p>}
                 {detailError && <ErrorNotice message={detailError} />}
-                {journal.status !== "deleting" && videoUrl &&
-                  <video controls preload="metadata" src={videoUrl} aria-label={`Video for ${journal.title || "Untitled"}`}/>}
-                {opened?.analysis && <ReflectionPanel reflection={opened.analysis}/>}
-                {opened?.status === "failed" && <p className="muted">This reflection could not be completed.</p>}
-                {opened && !opened.analysis && opened.status !== "failed" &&
+                {journal.status !== "deleting" && videos.current.has(journal.upload_id) &&
+                  <video
+                    controls
+                    preload="metadata"
+                    playsInline
+                    src={videos.current.get(journal.upload_id)}
+                    aria-label={`Video for ${journal.title || "Untitled"}`}
+                    ref={element => {
+                      if (element) mediaElements.current.set(journal.upload_id, element);
+                      else mediaElements.current.delete(journal.upload_id);
+                    }}
+                    onError={() => {
+                      if (openId === journal.upload_id) setVideoErrorId(journal.upload_id);
+                    }}
+                  />}
+                {videoErrorId === journal.upload_id && openId === journal.upload_id && (
+                  <div>
+                    <p className="muted">The video couldn't load. Its private link may have expired.</p>
+                    <button className="button button-secondary" type="button"
+                      disabled={loadingDetail}
+                      onClick={() => void retryVideo(journal.upload_id)}>Reload video</button>
+                  </div>
+                )}
+                {details.current.get(journal.upload_id)?.analysis &&
+                  <ReflectionPanel reflection={details.current.get(journal.upload_id)!.analysis!}/>}
+                {details.current.get(journal.upload_id)?.status === "failed" && <p className="muted">This reflection could not be completed.</p>}
+                {details.current.has(journal.upload_id) &&
+                  !details.current.get(journal.upload_id)?.analysis &&
+                  details.current.get(journal.upload_id)?.status !== "failed" &&
                   <p className="muted">Your reflection is still being prepared.</p>}
                 <div className="history-actions">
                   {editingId === journal.upload_id ? (

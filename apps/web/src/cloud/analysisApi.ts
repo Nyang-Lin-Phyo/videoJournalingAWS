@@ -1,3 +1,4 @@
+
 export type Analysis = {
   sentiment: "positive" | "negative" | "neutral";
   emotions: string[];
