@@ -16,7 +16,8 @@
   cursor: pointer;
   text-align: left;
   background: transparent;
-}.history-intro { margin-bottom: 22px; }
+}
+.history-intro { margin-bottom: 22px; }
 .history-entries { display: flex; flex-direction: column; gap: 12px; }
 .history-entry { overflow: hidden; }
 .history-toggle { border: 0; width: 100%; text-align: left; background: transparent; display: flex; gap: 14px; justify-content: space-between; align-items: center; cursor: pointer; padding: 20px; color: inherit; font: inherit; }
