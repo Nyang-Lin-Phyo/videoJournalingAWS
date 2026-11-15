@@ -120,7 +120,14 @@ def process_object(bucket, key):
                      {':s':'completed',':a':analysis},'leaseToken, leaseExpiresAt, #e')
         LOG.info('Completed upload %s',upload_id)
     except Exception as exc:
-        LOG.error('Processing attempt failed for %s (%s)',upload_id,type(exc).__name__)
+        # Provider helpers redact response bodies. Keep only safe HTTP codes in logs.
+        detail = type(exc).__name__
+        if isinstance(exc, RuntimeError) and re.fullmatch(
+            r'(?:ElevenLabs|Gemini) HTTP [0-9]{3}|(?:ElevenLabs|Gemini) network error',
+            str(exc)
+        ):
+            detail = str(exc)
+        LOG.error('Processing attempt failed for %s (%s)',upload_id,detail)
         if permanent_error(exc):
             update_owned(upload_id,token,'#s=:s, #e=:e',
                          {':s':'failed',':e':safe_error(exc)},'leaseToken, leaseExpiresAt')

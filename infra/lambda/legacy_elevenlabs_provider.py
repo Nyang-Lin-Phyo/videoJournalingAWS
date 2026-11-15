@@ -13,6 +13,8 @@ import logging
 import os
 import re
 import uuid
+import random
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote_plus
 from urllib.request import Request, urlopen
@@ -154,7 +156,7 @@ def validate_analysis(value):
     return value
 
 
-def analyze_transcript(transcript):
+def _analyze_transcript_once(transcript):
     payload = {
         "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
         "contents": [{"role": "user", "parts": [{"text": transcript[:12000]}]}],
@@ -177,12 +179,41 @@ def analyze_transcript(transcript):
             value = json.loads(response.read(1024 * 1024))
     except HTTPError as exc:
         raise RuntimeError(f"Gemini HTTP {exc.code}") from None
-    except URLError:
+    except (URLError, TimeoutError, ConnectionError):
         raise RuntimeError("Gemini network error") from None
     raw = "".join(
         item.get("text", "") for item in value["candidates"][0]["content"]["parts"]
     )
     return validate_analysis(json.loads(raw))
+
+
+# Short, bounded retries for *transient* Gemini failures only.
+# Durable SQS retry still handles failures that outlast these attempts.
+_GEMINI_RETRY_DELAYS = (5.0, 10.0, 20.0)
+
+def _retryable_gemini_failure(exc):
+    if not isinstance(exc, RuntimeError):
+        return False
+    message = str(exc)
+    if message == "Gemini network error":
+        return True
+    match = re.fullmatch(r"Gemini HTTP ([0-9]{3})", message)
+    return bool(match and int(match.group(1)) in (429, 500, 502, 503, 504))
+
+def analyze_transcript(transcript):
+    # At most 4 Gemini requests per worker invocation. 5/10/20 sec
+    # backoff with slight jitter avoids synchronized rate-limit bursts.
+    for attempt in range(len(_GEMINI_RETRY_DELAYS) + 1):
+        try:
+            return _analyze_transcript_once(transcript)
+        except RuntimeError as exc:
+            if attempt == len(_GEMINI_RETRY_DELAYS) or not _retryable_gemini_failure(exc):
+                raise
+            delay = _GEMINI_RETRY_DELAYS[attempt] + random.uniform(0, 1.5)
+            # Only log a known-safe HTTP status or network error; never transcript/body/key.
+            LOG.warning("Temporary Gemini failure (%s); retry %d of %d in %.1fs",
+                        str(exc), attempt + 1, len(_GEMINI_RETRY_DELAYS), delay)
+            time.sleep(delay)
 
 
 def process_one(bucket, key):
