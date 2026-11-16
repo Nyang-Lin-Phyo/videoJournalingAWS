@@ -12,6 +12,8 @@ export type AnalysisResult = {
   created_at: string;
   status: "awaiting_upload" | "queued" | "transcribing" | "analyzing" | "completed" | "failed" | "deleting";
   analysis: Analysis | null;
+  transcript?: string | null;
+  transcript_error?: string | null;
   error: string | null;
 };
 

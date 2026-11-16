@@ -24,7 +24,11 @@ You do not need the Vite development server, FastAPI, a database, FFmpeg, Whispe
 
 `login.test.tsx` checks the cloud login page's Google redirect parameters, duplicate-click prevention, loading states, retryable errors, authenticated workspace, and missing configuration. Run it with `npx vitest run tests/login.test.tsx`. These checks mock the OIDC provider; they do not perform a live Google sign-in.
 
-The suite currently contains **36 tests across five test files**. Vitest counts parameterized cases individually, so one `it.each(...)` may account for multiple tests.
+`transcript.test.tsx` checks preview truncation, intentional opening, full text and plain-text safety, keyboard focus containment/restoration, close controls, unavailable/processing states, and portal/scroll cleanup. `cloudTranscript.test.tsx` checks cloud history integration, transcript reading when the video fails, cleanup on tab changes, and compatibility with an older API response. Run both with `npx vitest run tests/transcript.test.tsx tests/cloudTranscript.test.tsx`.
+
+`cloudPreview.test.tsx` verifies that the local preview uses the cloud upload and history components, opens the transcript reader, and performs no network requests.
+
+The suite currently contains **44 tests across eight test files**. Vitest counts parameterized cases individually, so one `it.each(...)` may account for multiple tests.
 
 ## All available test commands
 
