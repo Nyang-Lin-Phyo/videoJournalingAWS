@@ -44,6 +44,25 @@ Journal detail, cloud history, and cloud upload results show a compact transcrip
 
 For a frontend-only preview of the actual cloud interface, set `$env:VITE_CLOUD_PREVIEW='true'` in PowerShell and run `npm run dev -- --port 5174`. Open `http://127.0.0.1:5174/`, choose **Journal history**, open **A walk after class**, then choose **Read full transcript**. The upload form, sidebar, history, and transcript reader are the same components used by the cloud application. Only the session and data services are replaced with local fictional data through `CloudEnvironmentContext`. Example journals have no recordings. Selected videos remain in memory for local playback; saving generates explicitly fictional results without sending the video to AWS or an AI provider. Refresh resets preview entries. This mode is development-only and is excluded from production builds; omit `VITE_CLOUD_PREVIEW` for real Cognito/API integration.
 
+The cloud sidebar's **Settings** panel provides sign-out and account deletion. In the local preview, deletion clears only fictional in-memory entries and never calls AWS; sign-out explains that preview mode has no authenticated session. In the authenticated Cognito app, deletion requires typing `DELETE`, verifies the account email against the signed-in Cognito subject, waits for issued upload links and active processing to finish, removes all owned journal metadata and S3 object versions, then deletes the Cognito user. The minimal account-deletion tombstone remains to reject still-valid access tokens. Deploy the backend route and IAM changes through `infra/deploy-history-v5.sh` only after reviewing the script and setting both `CONFIRM_HISTORY_V5=YES` and `CONFIRM_ACCOUNT_DELETE=YES`. Do not deploy from local preview credentials.
+
+Run `python infra/test-account-deletion.py` for offline account-removal checks; it uses mocked DynamoDB, S3, and Cognito services.
+
+## Streaks and rewards
+
+The sidebar streak card shows the current streak, whether today's upload counted, and the points balance. Opening it reveals the Rewards panel. A video earns one point on its successful S3 storage event, at most once per local calendar day. The IANA timezone from the first counted upload anchors the account's day boundary. Existing journal history is not backfilled. A streak freeze costs 7 points and automatically protects one missed day; frozen days preserve the streak but do not earn points. Account deletion removes streak and rewards data.
+
+After the authenticated v5 history/account-deletion backend is deployed, deploy streak routes and worker changes from PowerShell in the AWS-configured repository environment:
+
+```powershell
+$env:CONFIRM_STREAK_V1='YES'
+bash infra/deploy-streak-v1.sh
+```
+
+Review the script and AWS account before running it; it sets the feature start time so pending older S3 events do not grant launch-period points. The local cloud preview simulates streak/reward state in memory and makes no AWS requests.
+
+Run `python infra/test-streaks.py` for offline timezone, duplicate-event, freeze-purchase, and S3-event ordering checks.
+
 Cloud mode needs the updated `infra/lambda/auth_results.py` deployed to the existing results Lambda, alongside the frontend. The existing JWT-protected `GET /uploads/{upload_id}/result` adds nullable `transcript` and `transcript_error` fields. It reads the saved S3 text only after checking journal ownership, validates the exact object key, and limits reads to 256 KiB of UTF-8. No transcription/model calls, new routes, or new permissions are introduced; the v5 results role already permits reading transcript objects. Missing transcripts show an unavailable state. Read failures preserve the reflection and display a safe error. A frontend deployed against the older API also shows the unavailable state.
 
 Verify locally with `npm test`, `npm run build`, `npm run lint`, and (from the repo root, with boto3 installed) `python infra/test-history-v5.py`. Before using real journals, verify the deployed endpoint with two separate test accounts: each owner can read their saved transcript, and the other account receives 404. Nothing in this change deploys AWS resources automatically.
