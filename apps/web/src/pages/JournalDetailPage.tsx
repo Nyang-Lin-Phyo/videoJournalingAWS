@@ -9,6 +9,7 @@ import { AnalysisPanel } from "../components/AnalysisPanel";
 import { VideoPreview } from "../components/VideoPreview";
 import { Icon } from "../components/Icon";
 import { ErrorNotice, Loading } from "../components/Feedback";
+import { TranscriptPanel } from "../components/TranscriptPanel";
 export function JournalDetailPage() {
   const { id = "" } = useParams();
   return <JournalDetail key={id} id={id} />;
@@ -164,24 +165,8 @@ function JournalDetail({ id }: { id: string }) {
               demo={useMockApi}
             />
           </section>
-          <section
-            className="panel transcript-panel"
-            aria-labelledby="transcript-heading"
-          >
-            <div className="panel-title">
-              <h2 id="transcript-heading">In your words</h2>
-              <span className="section-label">TRANSCRIPT</span>
-            </div>
-            {journal.transcript ? (
-              <p className="transcript">{journal.transcript}</p>
-            ) : (
-              <p className="muted">
-                {journal.status === "failed"
-                  ? "No transcript was returned for this entry."
-                  : "Your transcript will appear here when it is available."}
-              </p>
-            )}
-          </section>
+          <TranscriptPanel transcript={journal.transcript} pending={active || journal.status === "awaiting_upload"}
+            title={date.toLocaleDateString(undefined, { dateStyle: "long" })} />
         </div>
         <div className="detail-aside">
           {journal.analysis ? (

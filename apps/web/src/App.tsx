@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { useMockApi } from "./api/client";
 import { Icon } from "./components/Icon";
@@ -6,12 +6,17 @@ import { CloudAuthApp } from "./cloud/CloudAuthApp";
 import { JournalListPage } from "./pages/JournalListPage";
 import { UploadPage } from "./pages/UploadPage";
 import { JournalDetailPage } from "./pages/JournalDetailPage";
+const CloudPreviewApp = import.meta.env.DEV && import.meta.env.VITE_CLOUD_PREVIEW === "true"
+  ? lazy(() => import("./cloud/CloudPreviewApp")) : null;
 export default function App() {
   const location = useLocation();
   const [showAbout, setShowAbout] = useState(false);
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }, [location.pathname]);
+  if (CloudPreviewApp) {
+    return <Suspense fallback={<main style={{ padding: 32 }}>Loading preview…</main>}><CloudPreviewApp /></Suspense>;
+  }
   if (import.meta.env.VITE_CLOUD_INGEST_ONLY === "true") {
     return <CloudAuthApp />;
   }
