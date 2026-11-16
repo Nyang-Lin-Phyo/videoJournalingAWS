@@ -1,0 +1,76 @@
+{
+    "Items": [
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "rh2g1n",
+            "RouteId": "8smkxw5",
+            "RouteKey": "GET /journals",
+            "Target": "integrations/pt685ff"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "rh2g1n",
+            "RouteId": "bviekr7",
+            "RouteKey": "GET /streak",
+            "Target": "integrations/pt685ff"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "rh2g1n",
+            "RouteId": "c4tfa3k",
+            "RouteKey": "POST /uploads",
+            "Target": "integrations/0ix4fct"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "rh2g1n",
+            "RouteId": "hcmvqmi",
+            "RouteKey": "GET /uploads/{upload_id}/result",
+            "Target": "integrations/pt685ff"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "rh2g1n",
+            "RouteId": "k9327w7",
+            "RouteKey": "GET /uploads/{upload_id}/video-url",
+            "Target": "integrations/pt685ff"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "rh2g1n",
+            "RouteId": "mel9c9j",
+            "RouteKey": "DELETE /journals/{upload_id}",
+            "Target": "integrations/pt685ff"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "rh2g1n",
+            "RouteId": "r32broi",
+            "RouteKey": "PATCH /journals/{upload_id}",
+            "Target": "integrations/pt685ff"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "rh2g1n",
+            "RouteId": "s5s4x4k",
+            "RouteKey": "DELETE /account",
+            "Target": "integrations/pt685ff"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "rh2g1n",
+            "RouteId": "yxr9eto",
+            "RouteKey": "POST /streak/freeze",
+            "Target": "integrations/pt685ff"
+        }
+    ]
+}
