@@ -34,10 +34,11 @@ export async function signUpload(file: File, title: string, accessToken: string,
   if (invalid) throw new Error(invalid);
   if (!configuredUrl) throw new Error("VITE_INGEST_API_URL is not configured in the frontend build.");
   const api = configuredUrl.replace(/\/$/, "");
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const response = await fetch(`${api}/uploads`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
-    body: JSON.stringify({ filename: file.name, content_type: "video/mp4", size: file.size, title: title.trim() }),
+    body: JSON.stringify({ filename: file.name, content_type: "video/mp4", size: file.size, title: title.trim(), timezone }),
     signal,
   });
   const data: unknown = await response.json().catch(() => null);

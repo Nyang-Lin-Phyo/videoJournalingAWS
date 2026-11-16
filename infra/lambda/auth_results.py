@@ -10,6 +10,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -28,6 +29,8 @@ ACTIVE = {'awaiting_upload', 'queued', 'transcribing', 'analyzing'}
 ACCOUNT_UPLOAD_EXPIRY_SECONDS = 330
 ACCOUNT_JOURNAL_BATCH_SIZE = 5
 ACCOUNT_PREFIX_PAGE_SIZE = 500
+STREAK_KEY_PREFIX = 'streak#'
+STREAK_FREEZE_COST = 7
 ACCOUNT_MARKER_CLEANUP_FIELDS = (
     'cleanupPhase', 'deleteNotBefore', 'cognitoUsername',
     'journalCursor', 'uploadsCursor', 'transcriptsCursor',
@@ -283,6 +286,95 @@ def account_marker_key(owner):
     return f'account#{owner}'
 
 
+def streak_key(owner):
+    return f'{STREAK_KEY_PREFIX}{owner}'
+
+
+def valid_timezone(value):
+    if not isinstance(value, str) or not 1 <= len(value) <= 128:
+        return None
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+    return value
+
+
+def streak_summary(owner, requested_timezone='UTC'):
+    item = table.get_item(
+        Key={'uploadId': streak_key(owner)},
+        ConsistentRead=True,
+    ).get('Item')
+    zone_name = item.get('timezone', requested_timezone) if item else requested_timezone
+    zone = ZoneInfo(zone_name)
+    today = datetime.now(timezone.utc).astimezone(zone).date()
+    freezes = int(item.get('freezes', 0)) if item else 0
+    current_streak = int(item.get('currentStreak', 0)) if item else 0
+    uploaded_today = False
+    freeze_pending = False
+    last_upload_at = item.get('lastUploadAt') if item else None
+    if last_upload_at:
+        last_day = datetime.fromisoformat(last_upload_at.replace('Z', '+00:00')).astimezone(zone).date()
+        uploaded_today = last_day == today
+        missed_days = (today - last_day).days - 1
+        if missed_days > freezes:
+            current_streak = 0
+        elif missed_days > 0:
+            freeze_pending = True
+    return {
+        'current_streak': current_streak,
+        'longest_streak': int(item.get('longestStreak', 0)) if item else 0,
+        'points': int(item.get('points', 0)) if item else 0,
+        'freezes': freezes,
+        'freeze_cost': STREAK_FREEZE_COST,
+        'uploaded_today': uploaded_today,
+        'freeze_pending': freeze_pending,
+    }
+
+
+def handle_streak(event, owner):
+    query = event.get('queryStringParameters') or {}
+    requested_timezone = valid_timezone(query.get('timezone', 'UTC'))
+    if requested_timezone is None:
+        return respond(400, {'error': 'Invalid timezone'})
+    return respond(200, streak_summary(owner, requested_timezone))
+
+
+def handle_buy_freeze(owner):
+    key = {'uploadId': streak_key(owner)}
+    for _ in range(3):
+        item = table.get_item(Key=key, ConsistentRead=True).get('Item')
+        if not item or int(item.get('points', 0)) < STREAK_FREEZE_COST:
+            return respond(409, {'error': 'You need 7 points to buy a streak freeze.'})
+        now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+        try:
+            table.update_item(
+                Key=key,
+                UpdateExpression=(
+                    'SET #points = #points - :cost, #freezes = if_not_exists(#freezes, :zero) + :one, '
+                    '#version = #version + :one, updatedAt = :now'
+                ),
+                ConditionExpression='#points >= :cost AND #version = :version',
+                ExpressionAttributeNames={
+                    '#points': 'points',
+                    '#freezes': 'freezes',
+                    '#version': 'version',
+                },
+                ExpressionAttributeValues={
+                    ':cost': STREAK_FREEZE_COST,
+                    ':zero': 0,
+                    ':one': 1,
+                    ':now': now,
+                    ':version': item['version'],
+                },
+            )
+            return respond(200, streak_summary(owner, item.get('timezone', 'UTC')))
+        except ClientError as exc:
+            if exc.response['Error']['Code'] != 'ConditionalCheckFailedException':
+                raise
+    return respond(409, {'error': 'Your streak balance changed. Please try again.'})
+
+
 def account_marker(owner):
     return table.get_item(
         Key={'uploadId': account_marker_key(owner)},
@@ -436,7 +528,12 @@ def handle_account_delete(event, owner):
             if last_key:
                 update_account_marker(owner, {'journalCursor': last_key})
                 return pending_account_delete('Removing your journals and recordings.')
-            update_account_marker(owner, {'cleanupPhase': 'uploads'}, ('journalCursor',))
+            update_account_marker(owner, {'cleanupPhase': 'streak'}, ('journalCursor',))
+            return pending_account_delete('Removing your streak data.')
+
+        if phase == 'streak':
+            table.delete_item(Key={'uploadId': streak_key(owner)})
+            update_account_marker(owner, {'cleanupPhase': 'uploads'})
             return pending_account_delete('Removing your recordings.')
 
         if phase in ('uploads', 'transcripts'):
@@ -535,6 +632,10 @@ def handler(event, context):
         return handle_account_delete(event, owner)
     if account_marker(owner):
         return respond(409, {'error': 'Account deletion is in progress. Continue deletion from Settings.'})
+    if route == 'GET /streak':
+        return handle_streak(event, owner)
+    if route == 'POST /streak/freeze':
+        return handle_buy_freeze(owner)
     if route == 'GET /journals':
         return handle_list(event, owner)
     upload_id = upload_id_of(event)

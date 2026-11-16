@@ -62,7 +62,7 @@ def test_sqs_worker():
     worker.table=MagicMock();worker.s3=MagicMock()
     row={'uploadId':uid,'userId':sub,'videoKey':key,'status':'awaiting_upload'}
     worker.table.get_item.side_effect=lambda Key,**kwargs: (
-        {} if Key['uploadId']==f'account#{sub}' else {'Item':row}
+        {} if Key['uploadId'] in (f'account#{sub}', f'streak#{sub}') else {'Item':row}
     )
     worker.s3.get_object.side_effect=[ClientError({'Error':{'Code':'NoSuchKey','Message':'not found'}},'GetObject'),
                                       {'Body':io.BytesIO(b'\0\0\0\x18ftypisom\0\0\0\0')}]
@@ -70,7 +70,8 @@ def test_sqs_worker():
     transcribed=[]
     worker.provider.transcribe_mp4=lambda v:(transcribed.append(v) or 'Today I am happy.')
     worker.provider.analyze_transcript=lambda t:{'sentiment':'positive','emotions':['joy'],'themes':['day'],'summary':'happy'}
-    body={'Records':[{'eventSource':'aws:s3','s3':{'bucket':{'name':'example-bucket'},'object':{'key':key}}}]}
+    body={'Records':[{'eventSource':'aws:s3','eventTime':'2026-11-16T17:00:00Z',
+                      's3':{'bucket':{'name':'example-bucket'},'object':{'key':key}}}]}
     sqs={'Records':[{'eventSource':'aws:sqs','messageId':'m1','body':json.dumps(body)}]}
     r=worker.handler(sqs,None)
     assert r=={'batchItemFailures':[]},r

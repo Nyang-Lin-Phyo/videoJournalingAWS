@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./cloud.css";
 import { Icon } from "../components/Icon";
 import { CloudIngestPage } from "./CloudIngestPage";
 import { CloudHistoryPage } from "./CloudHistoryPage";
 import { useCloudEnvironment } from "./CloudEnvironment";
+import type { StreakSummary } from "./analysisApi";
 
 type CloudView = "upload" | "history";
 type CloudIngestAppProps = {
@@ -17,6 +18,12 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
   const [view, setView] = useState<CloudView>("upload");
   const [refreshKey, setRefreshKey] = useState(0);
   const [uploadRevision, setUploadRevision] = useState(0);
+  const [streakRefreshKey, setStreakRefreshKey] = useState(0);
+  const [streak, setStreak] = useState<StreakSummary | null>(null);
+  const [streakError, setStreakError] = useState<string | null>(null);
+  const [streakRewardsOpen, setStreakRewardsOpen] = useState(false);
+  const [buyingFreeze, setBuyingFreeze] = useState(false);
+  const [freezeMessage, setFreezeMessage] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
@@ -24,6 +31,52 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
   const [deleteProgress, setDeleteProgress] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [settingsMessage, setSettingsMessage] = useState("");
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: number | undefined;
+    let attempts = 0;
+    const load = async () => {
+      attempts += 1;
+      try {
+        const summary = await services.fetchStreak(accessToken, timezone, controller.signal);
+        if (controller.signal.aborted) return;
+        setStreak(summary);
+        setStreakError(null);
+        if (streakRefreshKey > 0 && !summary.uploaded_today && attempts < 6) {
+          timer = window.setTimeout(() => void load(), 2500);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setStreakError(error instanceof Error ? error.message : "Unable to load your streak.");
+          if (streakRefreshKey > 0 && attempts < 6) {
+            timer = window.setTimeout(() => void load(), 2500);
+          }
+        }
+      }
+    };
+    void load();
+    return () => {
+      controller.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [accessToken, services, streakRefreshKey, timezone]);
+
+  async function buyStreakFreeze() {
+    setBuyingFreeze(true);
+    setFreezeMessage("");
+    setStreakError(null);
+    try {
+      const updated = await services.buyStreakFreeze(accessToken);
+      setStreak(updated);
+      setFreezeMessage("Streak freeze added to your inventory.");
+    } catch (error) {
+      setStreakError(error instanceof Error ? error.message : "Unable to buy a streak freeze.");
+    } finally {
+      setBuyingFreeze(false);
+    }
+  }
 
   async function signOut() {
     if (!onSignOut) {
@@ -83,6 +136,78 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
             <Icon name="book" /> Journal history {view === "history" && <span className="nav-dot" />}
           </button>
         </nav>
+        <div className="streak-widget">
+          <button
+            type="button"
+            className="streak-card"
+            aria-expanded={streakRewardsOpen}
+            aria-controls="streak-rewards"
+            onClick={() => {
+              setStreakRewardsOpen(value => !value);
+              setFreezeMessage("");
+            }}
+          >
+            <Icon name="spark" size={20} />
+            <span className="streak-card-copy">
+              <strong>{streak
+                ? streak.current_streak > 0
+                  ? `${streak.current_streak} day${streak.current_streak === 1 ? "" : "s"} streak`
+                  : "Start a streak"
+                : "Streak"}
+              </strong>
+              <span>
+                {streakError ? "Streak unavailable" : !streak ? "Loading streak…" :
+                  streak.uploaded_today ? "Today's upload counted" :
+                    streak.freeze_pending ? "Freeze ready to protect it" :
+                      streak.current_streak ? "Upload today to keep it going" : "Upload to start your streak"}
+              </span>
+            </span>
+            <span className="streak-card-points">
+              <strong>{streak?.points ?? "—"}</strong>
+              <span>points</span>
+            </span>
+          </button>
+          {streakRewardsOpen && (
+            <section id="streak-rewards" className="streak-rewards" aria-label="Streak rewards">
+              <div className="streak-rewards-heading">
+                <h2>Streak rewards</h2>
+                <button type="button" className="settings-close" aria-label="Close rewards" onClick={() => setStreakRewardsOpen(false)}>
+                  <Icon name="close" size={17} />
+                </button>
+              </div>
+              <p className="streak-rewards-balance">
+                {streak?.points ?? "—"} points · {streak?.freezes ?? 0} freeze{streak?.freezes === 1 ? "" : "s"} owned
+              </p>
+              {streakError && (
+                <button
+                  type="button"
+                  className="streak-retry-button"
+                  onClick={() => setStreakRefreshKey(value => value + 1)}
+                >
+                  Try loading streak again
+                </button>
+              )}
+              <div className="streak-reward-item">
+                <Icon name="shield" size={19} />
+                <div>
+                  <strong>Streak freeze</strong>
+                  <span>Automatically protects one missed day. It does not earn a point.</span>
+                </div>
+                <strong>{streak?.freeze_cost ?? 7} pts</strong>
+              </div>
+              {streakError && <p className="settings-error" role="alert">{streakError}</p>}
+              {freezeMessage && <p className="settings-message" role="status">{freezeMessage}</p>}
+              <button
+                type="button"
+                className="streak-buy-button"
+                disabled={!streak || streak.points < streak.freeze_cost || buyingFreeze}
+                onClick={() => void buyStreakFreeze()}
+              >
+                {buyingFreeze ? "Buying…" : "Buy streak freeze"}
+              </button>
+            </section>
+          )}
+        </div>
         <div className="sidebar-bottom">
           <div className="local-label"><span className="local-dot" /> Your private notebook</div>
           <p className="local-description">A quiet place for your moments.</p>
@@ -137,7 +262,14 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
         <main id="main-content" className="main-content">
           {/* Keep history mounted so its in-memory video cache survives tab switches. */}
           <div style={{ display: view === "upload" ? "block" : "none" }}>
-            <CloudIngestPage key={uploadRevision} active={view === "upload"} onUploaded={() => setRefreshKey(value => value + 1)} />
+            <CloudIngestPage
+              key={uploadRevision}
+              active={view === "upload"}
+              onUploaded={() => {
+                setRefreshKey(value => value + 1);
+                setStreakRefreshKey(value => value + 1);
+              }}
+            />
           </div>
           <div style={{ display: view === "history" ? "block" : "none" }}>
             <CloudHistoryPage active={view === "history"} refreshKey={refreshKey} onDeleted={() => { setUploadRevision(n => n + 1); setRefreshKey(n => n + 1); }} />

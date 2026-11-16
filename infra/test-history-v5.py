@@ -140,11 +140,14 @@ def run():
     signer.table=table; signer.s3=storage
     results.table=table; results.s3=storage
 
-    base={'filename':'moment.mp4','content_type':'video/mp4','size':2048,'title':'A wonderful day'}
+    base={'filename':'moment.mp4','content_type':'video/mp4','size':2048,'title':'A wonderful day',
+          'timezone':'America/New_York'}
     resp=signer.handler(event('POST /uploads',body=base),None)
     assert resp['statusCode']==200,resp
     uid=json.loads(resp['body'])['upload_id']; UUID(uid)
     assert table.rows[uid]['title']=='A wonderful day'
+    assert table.rows[uid]['timezone']=='America/New_York'
+    assert signer.handler(event('POST /uploads',body={**base,'timezone':'../invalid'}),None)['statusCode']==400
     table.rows['account#userA']={'uploadId':'account#userA','accountStatus':'deleting'}
     blocked=signer.handler(event('POST /uploads',body=base),None)
     assert blocked['statusCode']==409

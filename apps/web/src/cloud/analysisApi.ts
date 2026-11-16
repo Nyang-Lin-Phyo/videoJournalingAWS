@@ -47,6 +47,64 @@ export type JournalSummary = {
 };
 export type JournalHistory = { journals: JournalSummary[]; next_token: string | null };
 
+export type StreakSummary = {
+  current_streak: number;
+  longest_streak: number;
+  points: number;
+  freezes: number;
+  freeze_cost: number;
+  uploaded_today: boolean;
+  freeze_pending: boolean;
+};
+
+function parseStreakSummary(value: unknown): StreakSummary {
+  if (!value || typeof value !== "object") throw new Error("Invalid streak response.");
+  const data = value as Partial<StreakSummary>;
+  if (
+    !Number.isSafeInteger(data.current_streak) ||
+    (data.current_streak ?? -1) < 0 ||
+    !Number.isSafeInteger(data.longest_streak) ||
+    (data.longest_streak ?? -1) < 0 ||
+    !Number.isSafeInteger(data.points) ||
+    (data.points ?? -1) < 0 ||
+    !Number.isSafeInteger(data.freezes) ||
+    (data.freezes ?? -1) < 0 ||
+    !Number.isSafeInteger(data.freeze_cost) ||
+    (data.freeze_cost ?? 0) <= 0 ||
+    typeof data.uploaded_today !== "boolean" ||
+    typeof data.freeze_pending !== "boolean"
+  ) {
+    throw new Error("Invalid streak response.");
+  }
+  return data as StreakSummary;
+}
+
+export async function fetchStreak(token: string, timezone: string, signal?: AbortSignal): Promise<StreakSummary> {
+  const query = new URLSearchParams({ timezone });
+  const response = await fetch(`${base()}/streak?${query}`, {
+    headers: headers(token), cache: "no-store", signal,
+  });
+  if (!response.ok) throw new Error(`Unable to load streak (HTTP ${response.status}).`);
+  return parseStreakSummary(await response.json());
+}
+
+export async function buyStreakFreeze(token: string): Promise<StreakSummary> {
+  const response = await fetch(`${base()}/streak/freeze`, {
+    method: "POST",
+    headers: headers(token),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    let message = `Unable to buy a streak freeze (HTTP ${response.status}).`;
+    try {
+      const payload = await response.json() as { error?: string };
+      if (payload.error) message = payload.error;
+    } catch { /* keep the status code */ }
+    throw new Error(message);
+  }
+  return parseStreakSummary(await response.json());
+}
+
 export type AccountDeletionProgress = {
   complete: boolean;
   message?: string;

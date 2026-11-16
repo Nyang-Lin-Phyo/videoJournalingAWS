@@ -121,6 +121,135 @@
 .settings-error {
   color: #9e3330;
 }
+.streak-widget {
+  position: relative;
+  margin-top: 16px;
+}
+.streak-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 10px;
+  border: 1px solid rgb(243 225 200 / 35%);
+  border-radius: 9px;
+  color: var(--cream);
+  background: rgb(243 225 200 / 10%);
+  font: inherit;
+  text-align: left;
+}
+.streak-card:hover,
+.streak-card[aria-expanded="true"],
+.streak-card:focus-visible {
+  color: var(--brick);
+  background: var(--cream);
+}
+.streak-card-copy,
+.streak-card-points {
+  display: flex;
+  flex-direction: column;
+}
+.streak-card-copy {
+  flex: 1;
+  min-width: 0;
+  gap: 3px;
+}
+.streak-card-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.streak-card-copy span,
+.streak-card-points span {
+  font-size: 10px;
+  line-height: 1.4;
+}
+.streak-card-points {
+  align-items: flex-end;
+  gap: 2px;
+  padding-left: 9px;
+  border-left: 1px solid currentColor;
+}
+.streak-card-points strong {
+  font-size: 14px;
+}
+.streak-rewards {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  left: calc(100% + 10px);
+  width: 300px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--brick);
+  background: #fffefa;
+  box-shadow: 0 12px 32px rgb(67 51 46 / 18%);
+}
+.streak-rewards-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.streak-rewards-heading h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.streak-rewards-balance {
+  margin: 8px 0 14px;
+  color: #766a64;
+  font-size: 12px;
+}
+.streak-retry-button {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  color: var(--brick);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+}
+.streak-reward-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.streak-reward-item > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.streak-reward-item strong {
+  font-size: 12px;
+}
+.streak-reward-item span {
+  color: #766a64;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.streak-buy-button {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--brick);
+  border-radius: 7px;
+  color: var(--cream);
+  background: var(--brick);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+.streak-buy-button:hover:not(:disabled) {
+  background: #813832;
+}
+.streak-buy-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .account-dialog-backdrop {
   position: fixed;
   z-index: 50;
@@ -179,5 +308,15 @@
 @media (max-width: 680px) {
   .sidebar .settings-trigger {
     color: var(--brick);
+  }
+  .streak-widget {
+    grid-column: 1 / -1;
+    margin: 10px 0 12px;
+  }
+  .streak-rewards {
+    position: fixed;
+    top: 145px;
+    left: 14px;
+    width: min(300px, calc(100vw - 28px));
   }
 }

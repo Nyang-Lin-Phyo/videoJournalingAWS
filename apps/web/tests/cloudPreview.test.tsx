@@ -25,6 +25,12 @@ describe("cloud interface preview", () => {
 
   it("opens settings and makes preview deletion explicitly local-only", async () => {
     render(<CloudPreviewApp />);
+    const streakCard = await screen.findByRole("button", { name: /Upload to start your streak/ });
+    expect(streakCard).toHaveTextContent("Start a streak");
+    fireEvent.click(streakCard);
+    const rewards = screen.getByRole("region", { name: "Streak rewards" });
+    expect(rewards).toHaveTextContent("0 points");
+    expect(within(rewards).getByRole("button", { name: "Buy streak freeze" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("region", { name: "Settings" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeVisible();
@@ -43,7 +49,25 @@ describe("cloud interface preview", () => {
     const deleteAccount = vi.fn().mockResolvedValue({ complete: true });
     const onSignOut = vi.fn().mockResolvedValue(undefined);
     const onAccountDeleted = vi.fn().mockResolvedValue(undefined);
-    const services = { ...cloudServices, deleteAccount };
+    const fetchStreak = vi.fn().mockResolvedValue({
+      current_streak: 3,
+      longest_streak: 5,
+      points: 7,
+      freezes: 0,
+      freeze_cost: 7,
+      uploaded_today: true,
+      freeze_pending: false,
+    });
+    const buyStreakFreeze = vi.fn().mockResolvedValue({
+      current_streak: 3,
+      longest_streak: 5,
+      points: 0,
+      freezes: 1,
+      freeze_cost: 7,
+      uploaded_today: true,
+      freeze_pending: false,
+    });
+    const services = { ...cloudServices, deleteAccount, fetchStreak, buyStreakFreeze };
     render(
       <CloudEnvironmentContext.Provider value={{
         userSub: "test-user",
@@ -58,6 +82,10 @@ describe("cloud interface preview", () => {
         />
       </CloudEnvironmentContext.Provider>,
     );
+    fireEvent.click(await screen.findByRole("button", { name: /Today's upload counted/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Buy streak freeze" }));
+    await waitFor(() => expect(buyStreakFreeze).toHaveBeenCalledOnce());
+    expect(await screen.findByText(/1 freeze owned/)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(onSignOut).toHaveBeenCalledOnce());

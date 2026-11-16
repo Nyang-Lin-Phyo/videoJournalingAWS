@@ -152,7 +152,13 @@ def run():
         'uploads/userA/orphan.mp4': ['v1'],
         'transcripts/userA/orphan.txt': ['v1'],
     }
-    table = FakeTable([row])
+    streak = {
+        'uploadId': 'streak#userA',
+        'recordType': 'streak',
+        'points': 14,
+        'currentStreak': 3,
+    }
+    table = FakeTable([row, streak])
     storage = FakeS3(objects)
     cognito = FakeCognito('userA')
     results.table = table
@@ -183,6 +189,7 @@ def run():
     assert all(not versions for versions in storage.versions.values())
     assert len(storage.deleted) == sum(map(len, objects.values()))
     assert table.rows[results.account_marker_key('userA')]['accountStatus'] == 'deleted'
+    assert results.streak_key('userA') not in table.rows
     assert results.handler(event(), None)['statusCode'] == 204
     print('PASS account deletion waits for signed uploads, removes journal and orphaned S3 versions, and deletes only the verified Cognito user')
 

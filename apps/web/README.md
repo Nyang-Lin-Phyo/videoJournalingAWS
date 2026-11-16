@@ -48,6 +48,21 @@ The cloud sidebar's **Settings** panel provides sign-out and account deletion. I
 
 Run `python infra/test-account-deletion.py` for offline account-removal checks; it uses mocked DynamoDB, S3, and Cognito services.
 
+## Streaks and rewards
+
+The sidebar streak card shows the current streak, whether today's upload counted, and the points balance. Opening it reveals the Rewards panel. A video earns one point on its successful S3 storage event, at most once per local calendar day. The IANA timezone from the first counted upload anchors the account's day boundary. Existing journal history is not backfilled. A streak freeze costs 7 points and automatically protects one missed day; frozen days preserve the streak but do not earn points. Account deletion removes streak and rewards data.
+
+After the authenticated v5 history/account-deletion backend is deployed, deploy streak routes and worker changes from PowerShell in the AWS-configured repository environment:
+
+```powershell
+$env:CONFIRM_STREAK_V1='YES'
+bash infra/deploy-streak-v1.sh
+```
+
+Review the script and AWS account before running it; it sets the feature start time so pending older S3 events do not grant launch-period points. The local cloud preview simulates streak/reward state in memory and makes no AWS requests.
+
+Run `python infra/test-streaks.py` for offline timezone, duplicate-event, freeze-purchase, and S3-event ordering checks.
+
 Cloud mode needs the updated `infra/lambda/auth_results.py` deployed to the existing results Lambda, alongside the frontend. The existing JWT-protected `GET /uploads/{upload_id}/result` adds nullable `transcript` and `transcript_error` fields. It reads the saved S3 text only after checking journal ownership, validates the exact object key, and limits reads to 256 KiB of UTF-8. No transcription/model calls, new routes, or new permissions are introduced; the v5 results role already permits reading transcript objects. Missing transcripts show an unavailable state. Read failures preserve the reflection and display a safe error. A frontend deployed against the older API also shows the unavailable state.
 
 Verify locally with `npm test`, `npm run build`, `npm run lint`, and (from the repo root, with boto3 installed) `python infra/test-history-v5.py`. Before using real journals, verify the deployed endpoint with two separate test accounts: each owner can read their saved transcript, and the other account receives 404. Nothing in this change deploys AWS resources automatically.

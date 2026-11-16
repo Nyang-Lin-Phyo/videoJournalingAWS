@@ -2,6 +2,7 @@
 import json, os, re
 from datetime import datetime, timezone
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import boto3
 from boto3.dynamodb.types import TypeSerializer
 from botocore.config import Config
@@ -31,10 +32,18 @@ def handler(event, context):
         request = json.loads(event.get('body') or '{}')
     except (TypeError, ValueError):
         return respond(400, {'error':'Invalid JSON'})
-    if not isinstance(request, dict) or set(request) != {'filename','content_type','size','title'}:
-        return respond(400, {'error':'Expected filename, content_type, size and title'})
+    required = {'filename','content_type','size','title'}
+    if not isinstance(request, dict) or not required.issubset(request) or set(request) - required - {'timezone'}:
+        return respond(400, {'error':'Expected filename, content_type, size, title and optional timezone'})
     filename, mime, size = request['filename'], request['content_type'], request['size']
     raw_title = request['title']
+    timezone_name = request.get('timezone', 'UTC')
+    if not isinstance(timezone_name, str) or not 1 <= len(timezone_name) <= 128:
+        return respond(400, {'error':'Invalid timezone'})
+    try:
+        ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return respond(400, {'error':'Invalid timezone'})
     if not isinstance(raw_title, str):
         return respond(400, {'error':'Title must be a string'})
     title = raw_title.strip()
@@ -48,7 +57,8 @@ def handler(event, context):
     now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')
     item = {'uploadId': upload_id, 'userId': sub, 'createdAt': now,
             'userCreatedAt': f'{now}#{upload_id}', 'videoKey': key,
-            'status': 'awaiting_upload', 'attempt': 0, 'size': size, 'title': title}
+            'status': 'awaiting_upload', 'attempt': 0, 'size': size, 'title': title,
+            'timezone': timezone_name}
     serialize = lambda value: {key: serializer.serialize(part) for key, part in value.items()}
     try:
         table.meta.client.transact_write_items(
