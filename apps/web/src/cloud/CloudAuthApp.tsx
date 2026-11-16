@@ -1,24 +1,37 @@
 import { AuthProvider, useAuth } from "react-oidc-context";
 import type { AuthProviderProps } from "react-oidc-context";
 import { CloudIngestApp } from "./CloudIngestApp";
+import { useRef, useState } from "react";
+import { LoginPage } from "./LoginPage";
 
 const region = import.meta.env.VITE_COGNITO_REGION as string | undefined;
 const poolId = import.meta.env.VITE_COGNITO_USER_POOL_ID as string | undefined;
 const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID as string | undefined;
 const cognitoDomain = import.meta.env.VITE_COGNITO_DOMAIN as string | undefined;
 
-function AuthenticatedCloud() {
+export function AuthenticatedCloud() {
   const auth = useAuth();
-  if (auth.isLoading || auth.activeNavigator) return <main style={{ padding: 32 }}>Loading Google sign-in…</main>;
-  if (auth.error) return <main style={{ padding: 32 }} role="alert">Sign-in error: {auth.error.message}</main>;
-  if (!auth.isAuthenticated) {
-    return <main style={{ maxWidth: 520, margin: "70px auto", padding: 32 }}>
-      <h1>reverie.</h1><p>A little space for yourself.</p>
-      <button className="button button-primary" onClick={() => void auth.signinRedirect({ extraQueryParams: { identity_provider: "Google" } })}>
-        Continue with Google
-      </button>
-      <p>Use fictional recordings until the full backend authorization tests pass.</p>
-    </main>;
+  const [isRedirecting, setIsRedirecting] = useState(false);
+  const [signInError, setSignInError] = useState(false);
+  const signInPending = useRef(false);
+  async function signIn() {
+    if (signInPending.current) return;
+    signInPending.current = true;
+    setIsRedirecting(true);
+    setSignInError(false);
+    try {
+      await auth.signinRedirect({ extraQueryParams: { identity_provider: "Google" } });
+    } catch {
+      setSignInError(true);
+    } finally {
+      signInPending.current = false;
+      setIsRedirecting(false);
+    }
+  }
+  if (auth.isLoading || auth.activeNavigator || !auth.isAuthenticated) {
+    return <LoginPage onSignIn={() => void signIn()}
+      isLoading={auth.isLoading || Boolean(auth.activeNavigator) || isRedirecting}
+      error={auth.error || signInError ? "We couldn’t complete sign-in. Please try again with Google." : undefined} />;
   }
   async function signOut() {
     // Remove this browser's session before redirecting to Cognito's logout endpoint.
@@ -38,7 +51,8 @@ function AuthenticatedCloud() {
 
 export function CloudAuthApp() {
   if (!region || !poolId || !clientId || !cognitoDomain) {
-    return <main style={{ padding: 32 }} role="alert">Missing VITE_COGNITO_* configuration.</main>;
+    return <LoginPage onSignIn={() => {}} disabled
+      error="Sign-in isn’t available right now. Missing VITE_COGNITO_* configuration. Please contact the app maintainer." />;
   }
   const oidcConfig: AuthProviderProps = {
     authority: `https://cognito-idp.${region}.amazonaws.com/${poolId}`,

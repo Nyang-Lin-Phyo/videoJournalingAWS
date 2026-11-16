@@ -22,7 +22,9 @@ You do not need the Vite development server, FastAPI, a database, FFmpeg, Whispe
 | `pages.test.tsx`      | Renders the actual React UI using an in-memory router. Checks empty history and upload links, completed detail fields and mock labeling, history filters, retryable errors, oversized-file prevention, retained-file retry, duplicate-submit protection, preview URL cleanup, plain-text rendering of HTML-like content, empty analysis lists, delete dialog cancel/focus behavior, confirmed deletion and navigation, missing entries, and file extension/MIME/empty/30 MiB boundary validation. | `npm run test:ui`              |
 | `setup.ts`            | Runs automatically before each test file. Adds DOM matchers such as `toBeVisible`, cleans up rendered React components after every test, restores spies and stubbed globals, and supplies a jsdom-compatible `window.scrollTo` stub. It is test support, not a standalone test command.                                                                                                                                                                                                           | Automatically loaded by Vitest |
 
-The suite currently contains **30 tests across four test files**. Vitest counts parameterized cases individually, so one `it.each(...)` may account for multiple tests.
+`login.test.tsx` checks the cloud login page's Google redirect parameters, duplicate-click prevention, loading states, retryable errors, authenticated workspace, and missing configuration. Run it with `npx vitest run tests/login.test.tsx`. These checks mock the OIDC provider; they do not perform a live Google sign-in.
+
+The suite currently contains **36 tests across five test files**. Vitest counts parameterized cases individually, so one `it.each(...)` may account for multiple tests.
 
 ## All available test commands
 

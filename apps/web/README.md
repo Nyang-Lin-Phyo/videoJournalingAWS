@@ -13,6 +13,19 @@ npm run dev
 
 Open http://127.0.0.1:5173. Node 22.12+ (or supported newer release) is needed by Vite.
 
+## Login home page (issue #13)
+
+To preview the cloud login page locally in PowerShell:
+
+```powershell
+$env:VITE_CLOUD_INGEST_ONLY='true'
+npm run dev
+```
+
+Without Cognito configuration, the welcome page renders with a disabled sign-in button and a configuration notice. To use Google sign-in, supply the existing deployment's `VITE_COGNITO_REGION`, `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, and `VITE_COGNITO_DOMAIN` in `.env.local`, and restart Vite. Use `http://localhost:5173/` for login testing: the existing Cognito setup scripts register that callback and logout URL. Using `http://127.0.0.1:5173/` requires adding that exact URL to the Cognito app client as well. The domain value includes `https://`. Do not put client secrets in Vite environment variables.
+
+`src/cloud/LoginPage.tsx` and `login.css` contain the responsive welcome screen. `CloudAuthApp.tsx` connects it to the existing Google/Cognito flow and handles loading, retryable errors, and duplicate-click prevention. Run `npx vitest run tests/login.test.tsx` for the mocked authentication UI checks. A live Google/Cognito round trip still requires the deployment configuration.
+
 ```powershell
 npm run build
 npm run lint
