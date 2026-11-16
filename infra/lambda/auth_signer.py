@@ -3,6 +3,7 @@ import json, os, re
 from datetime import datetime, timezone
 from uuid import uuid4
 import boto3
+from boto3.dynamodb.types import TypeSerializer
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
@@ -11,6 +12,7 @@ TABLE = os.environ['JOURNAL_TABLE']
 MAX_BYTES = 30 * 1024 * 1024
 s3 = boto3.client('s3', config=Config(signature_version='s3v4'))
 table = boto3.resource('dynamodb').Table(TABLE)
+serializer = TypeSerializer()
 SUB_RE = re.compile(r'^[0-9a-zA-Z_-]{1,128}$')
 
 def respond(status, payload):
@@ -47,7 +49,26 @@ def handler(event, context):
     item = {'uploadId': upload_id, 'userId': sub, 'createdAt': now,
             'userCreatedAt': f'{now}#{upload_id}', 'videoKey': key,
             'status': 'awaiting_upload', 'attempt': 0, 'size': size, 'title': title}
-    table.put_item(Item=item, ConditionExpression='attribute_not_exists(uploadId)')
+    serialize = lambda value: {key: serializer.serialize(part) for key, part in value.items()}
+    try:
+        table.meta.client.transact_write_items(
+            TransactItems=[
+                {'ConditionCheck': {
+                    'TableName': TABLE,
+                    'Key': serialize({'uploadId': f'account#{sub}'}),
+                    'ConditionExpression': 'attribute_not_exists(uploadId)',
+                }},
+                {'Put': {
+                    'TableName': TABLE,
+                    'Item': serialize(item),
+                    'ConditionExpression': 'attribute_not_exists(uploadId)',
+                }},
+            ],
+        )
+    except ClientError as exc:
+        if exc.response['Error']['Code'] in ('ConditionalCheckFailedException', 'TransactionCanceledException'):
+            return respond(409, {'error':'Account deletion is in progress. Sign out and contact support if this is unexpected.'})
+        raise
     try:
         signed = s3.generate_presigned_post(
             Bucket=BUCKET, Key=key,

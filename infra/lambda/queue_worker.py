@@ -107,6 +107,13 @@ def process_object(bucket, key):
     if not row or row.get('userId') != owner or row.get('videoKey') != key:
         LOG.info('Skipping unregistered upload %s',upload_id)
         return
+    account = table.get_item(
+        Key={'uploadId':f'account#{owner}'},
+        ConsistentRead=True,
+    ).get('Item')
+    if account:
+        LOG.info('Skipping upload for an account being deleted')
+        return
     token = attempt_claim(upload_id,row)
     if not token:
         LOG.info('Already handled or currently leased: %s',upload_id)

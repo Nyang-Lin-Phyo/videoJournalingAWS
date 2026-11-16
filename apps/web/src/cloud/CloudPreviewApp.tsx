@@ -24,6 +24,7 @@ function createPreview(): { environment: CloudEnvironment; dispose: () => void }
     environment: {
       userSub: "local-cloud-preview",
       accessToken: "local-preview-only",
+      isPreview: true,
       services: {
         async fetchJournals() {
           return { journals: Array.from(entries.values()).map(entry => ({
@@ -47,6 +48,15 @@ function createPreview(): { environment: CloudEnvironment; dispose: () => void }
           const url = videoUrls.get(id);
           if (url) URL.revokeObjectURL(url);
           videoUrls.delete(id);
+        },
+        async deleteAccount() {
+          entries.clear();
+          videoUrls.forEach(url => URL.revokeObjectURL(url));
+          videoUrls.clear();
+          return {
+            complete: true,
+            message: "Local preview data was cleared. No real account was deleted.",
+          };
         },
         async uploadMp4(file, title, onStage, onProgress, _token, signal) {
           signal?.throwIfAborted();

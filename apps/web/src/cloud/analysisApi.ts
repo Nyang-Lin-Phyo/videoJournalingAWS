@@ -47,6 +47,39 @@ export type JournalSummary = {
 };
 export type JournalHistory = { journals: JournalSummary[]; next_token: string | null };
 
+export type AccountDeletionProgress = {
+  complete: boolean;
+  message?: string;
+  retry_after_seconds?: number;
+};
+
+export async function deleteAccount(token: string, email: string): Promise<AccountDeletionProgress> {
+  const response = await fetch(`${base()}/account`, {
+    method: "DELETE",
+    headers: headers(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ email }),
+    cache: "no-store",
+  });
+  if (response.status === 204) return { complete: true };
+  let payload: { error?: string; message?: string; retry_after_seconds?: number } = {};
+  try {
+    payload = await response.json() as typeof payload;
+  } catch {
+    if (!response.ok) throw new Error(`Unable to delete account (HTTP ${response.status}).`);
+  }
+  if (response.status === 202 && payload.message) {
+    return {
+      complete: false,
+      message: payload.message,
+      retry_after_seconds: payload.retry_after_seconds,
+    };
+  }
+  if (!response.ok) {
+    throw new Error(payload.error || `Unable to delete account (HTTP ${response.status}).`);
+  }
+  throw new Error("Invalid account-deletion response.");
+}
+
 export async function fetchJournals(token: string, signal?: AbortSignal, nextToken?: string): Promise<JournalHistory> {
   const query = new URLSearchParams({ limit: "20" });
   if (nextToken) query.set("next_token", nextToken);

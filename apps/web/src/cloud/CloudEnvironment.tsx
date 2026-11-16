@@ -7,6 +7,7 @@ export const cloudServices = { ...api, uploadMp4 };
 export type CloudEnvironment = {
   userSub: string;
   accessToken: string;
+  isPreview?: boolean;
   services: typeof cloudServices;
 };
 
@@ -20,6 +21,7 @@ export function useCloudEnvironment(): CloudEnvironment {
   return override ?? {
     userSub: auth?.user?.profile.sub ?? "",
     accessToken: auth?.user?.access_token ?? "",
+    isPreview: false,
     services: cloudServices,
   };
 }

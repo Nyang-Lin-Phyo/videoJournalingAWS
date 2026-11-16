@@ -45,7 +45,12 @@ export function AuthenticatedCloud() {
       <span>Signed in as {auth.user?.profile.email ?? "Google user"}</span>
       <button type="button" onClick={() => void signOut()}>Sign out</button>
     </div>
-    <CloudIngestApp key={auth.user?.profile.sub ?? "anonymous"} />
+    <CloudIngestApp
+      key={auth.user?.profile.sub ?? "anonymous"}
+      accountEmail={auth.user?.profile.email}
+      onSignOut={signOut}
+      onAccountDeleted={signOut}
+    />
   </>;
 }
 

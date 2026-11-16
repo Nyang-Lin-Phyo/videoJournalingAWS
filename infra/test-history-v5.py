@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import UUID
 
 from botocore.exceptions import ClientError
+from boto3.dynamodb.types import TypeDeserializer
 
 os.environ.update({
     'AWS_EC2_METADATA_DISABLED': 'true', 'AWS_ACCESS_KEY_ID': 'fake',
@@ -36,6 +37,17 @@ class FakeTable:
     def __init__(self):
         self.rows = {}
         self.calls = []
+        self.meta = type('Meta', (), {})()
+        self.meta.client = self
+
+    def transact_write_items(self, TransactItems):
+        deserialize = TypeDeserializer().deserialize
+        check, put = TransactItems
+        marker_key = deserialize(check['ConditionCheck']['Key']['uploadId'])
+        if marker_key in self.rows:
+            raise condition_failed()
+        item = {key: deserialize(value) for key, value in put['Put']['Item'].items()}
+        self.rows[item['uploadId']] = item
 
     def put_item(self, Item, **kwargs):
         self.rows[Item['uploadId']] = Item
@@ -104,7 +116,17 @@ class FakeS3:
 
     def delete_objects(self, Bucket, Delete):
         self.deleted.extend(obj['Key'] for obj in Delete['Objects'])
+        for obj in Delete['Objects']:
+            self.objects.pop(obj['Key'], None)
         return {'Errors':[{'Key':'mock','Code':'TestFailure'}]} if self.fail_delete else {'Deleted':Delete['Objects']}
+
+    def list_object_versions(self, Bucket, Prefix, MaxKeys, **kwargs):
+        versions = [
+            {'Key': key, 'VersionId': 'null'}
+            for key in self.objects
+            if key.startswith(Prefix)
+        ][:MaxKeys]
+        return {'Versions':versions,'DeleteMarkers':[],'IsTruncated':False}
 
 
 def event(route, owner='userA', upload_id='', body=None):
@@ -123,6 +145,10 @@ def run():
     assert resp['statusCode']==200,resp
     uid=json.loads(resp['body'])['upload_id']; UUID(uid)
     assert table.rows[uid]['title']=='A wonderful day'
+    table.rows['account#userA']={'uploadId':'account#userA','accountStatus':'deleting'}
+    blocked=signer.handler(event('POST /uploads',body=base),None)
+    assert blocked['statusCode']==409
+    table.rows.pop('account#userA')
     assert signer.handler(event('POST /uploads',body={**base,'title':' '}),None)['statusCode']==400
     print('PASS new journal requires a validated title')
 
@@ -140,6 +166,8 @@ def run():
     key=f'transcripts/userA/{uid}.txt'
     table.rows[uid]['transcriptKey']=key
     storage.objects[key]='A quiet day.\n\nA fresh start.'.encode('utf-8')
+    storage.objects[f'uploads/userA/{uid}.mp4']=b'fake video'
+    storage.objects[f'results/{uid}.json']=b'fake result'
     r=results.handler(event('GET /uploads/{upload_id}/result',upload_id=uid),None)
     assert json.loads(r['body'])['transcript']=='A quiet day.\n\nA fresh start.'
     reads=len(storage.reads)
@@ -175,6 +203,7 @@ def run():
     results.handler(event('GET /journals'),None)
     assert len(storage.reads)==reads
     table.rows[uid]['transcriptKey']=key
+    storage.objects[key]=b'A quiet day.\n\nA fresh start.'
     print('PASS owner-only saved transcript, exact-key validation, size/encoding limits and missing S3 object')
 
     assert results.handler(event('PATCH /journals/{upload_id}',owner='userB',upload_id=uid,body={'title':'Private'}),None)['statusCode']==404
@@ -184,11 +213,9 @@ def run():
     print('PASS only owner can rename')
 
     assert results.handler(event('DELETE /journals/{upload_id}',owner='userB',upload_id=uid),None)['statusCode']==404
-    storage.versioning='Enabled'
-    assert results.handler(event('DELETE /journals/{upload_id}',upload_id=uid),None)['statusCode']==409
-    storage.versioning=''
     table.rows[uid]['status']='analyzing'
     assert results.handler(event('DELETE /journals/{upload_id}',upload_id=uid),None)['statusCode']==409
+    storage.versioning='Enabled'
     table.rows[uid]['status']='completed'
     storage.fail_delete=True
     assert results.handler(event('DELETE /journals/{upload_id}',upload_id=uid),None)['statusCode']==503
@@ -199,9 +226,9 @@ def run():
     assert uid not in table.rows
     deleted=set(storage.deleted)
     assert f'uploads/userA/{uid}.mp4' in deleted
-    assert f'transcripts/userA/{uid}.txt' in deleted
+    assert f'transcripts/userA/{uid}.txt' in deleted, deleted
     assert f'results/{uid}.json' in deleted
-    print('PASS delete blocks active jobs, refuses versioned bucket, retries cleanup and erases metadata/objects')
+    print('PASS delete blocks active jobs, removes object versions, retries cleanup and erases metadata/objects')
 
 
 if __name__=='__main__':
