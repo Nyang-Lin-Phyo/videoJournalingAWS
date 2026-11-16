@@ -42,7 +42,7 @@ export function CloudIngestApp() {
         <main id="main-content" className="main-content">
           {/* Keep history mounted so its in-memory video cache survives tab switches. */}
           <div style={{ display: view === "upload" ? "block" : "none" }}>
-            <CloudIngestPage key={uploadRevision} onUploaded={() => setRefreshKey(value => value + 1)} />
+            <CloudIngestPage key={uploadRevision} active={view === "upload"} onUploaded={() => setRefreshKey(value => value + 1)} />
           </div>
           <div style={{ display: view === "history" ? "block" : "none" }}>
             <CloudHistoryPage active={view === "history"} refreshKey={refreshKey} onDeleted={() => { setUploadRevision(n => n + 1); setRefreshKey(n => n + 1); }} />

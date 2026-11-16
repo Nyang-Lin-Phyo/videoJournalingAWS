@@ -3,8 +3,8 @@ info:
   title: Reverie private video journals API
   version: 5.0.0
   description: Owner-scoped private journals. Google sign-in through Cognito; use the Cognito access token.
-    Video upload uses a short-lived S3 presigned POST. The browser sees the saved reflection only, never
-    the private transcript. Old journal records without a title display as Untitled. PATCH renames without
+    Video upload uses a short-lived S3 presigned POST. Only the owner can read the saved reflection and
+    transcript. Old journal records without a title display as Untitled. PATCH renames without
     model work. DELETE removes the owned journal, MP4 and saved text/results after processing reaches
     completed or failed. Delete refuses versioned S3 buckets in the MVP. Reading, renaming or deleting
     never invokes transcription or model providers.
@@ -59,8 +59,8 @@ paths:
       - Uploads
       operationId: getUploadResult
       summary: Retrieve current user's saved reflection and processing status
-      description: Owner-scoped result. No transcript is returned to the browser; internal transcription
-        stays private. Unknown, deleted or another user's IDs return 404.
+      description: Owner-scoped result including the saved transcript when available (up to 256 KiB UTF-8).
+        Reading never invokes transcription or model providers. Unknown, deleted or another user's IDs return 404.
       parameters:
       - $ref: '#/components/parameters/UploadId'
       responses:
@@ -369,6 +369,14 @@ components:
           nullable: true
           allOf:
           - $ref: '#/components/schemas/Analysis'
+        transcript:
+          type: string
+          nullable: true
+          description: Saved transcript text, or null when unavailable. Never included in journal lists.
+        transcript_error:
+          type: string
+          nullable: true
+          description: Safe read-failure message, or null. Reflection remains available on transcript read failure.
         error:
           type: string
           nullable: true

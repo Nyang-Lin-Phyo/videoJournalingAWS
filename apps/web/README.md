@@ -25,6 +25,16 @@ All automated frontend tests and shared setup are in [`tests/`](tests/README.md)
 
 ## Milestone and scope
 
+### Transcript reader (issue #2)
+
+Journal detail, cloud history, and cloud upload results show a compact transcript preview with an explicit **Read full transcript** button. The reader opens at 75% of the desktop viewport (nearly full screen on phones), preserves paragraph breaks, and scrolls independently. Close it with its button, Escape, or the backdrop. Keyboard focus stays in the reader and returns to its trigger on close; background interaction and scrolling are disabled while it is open.
+
+For a frontend-only preview of the actual cloud interface, set `$env:VITE_CLOUD_PREVIEW='true'` in PowerShell and run `npm run dev -- --port 5174`. Open `http://127.0.0.1:5174/`, choose **Journal history**, open **A walk after class**, then choose **Read full transcript**. The upload form, sidebar, history, and transcript reader are the same components used by the cloud application. Only the session and data services are replaced with local fictional data through `CloudEnvironmentContext`. Example journals have no recordings. Selected videos remain in memory for local playback; saving generates explicitly fictional results without sending the video to AWS or an AI provider. Refresh resets preview entries. This mode is development-only and is excluded from production builds; omit `VITE_CLOUD_PREVIEW` for real Cognito/API integration.
+
+Cloud mode needs the updated `infra/lambda/auth_results.py` deployed to the existing results Lambda, alongside the frontend. The existing JWT-protected `GET /uploads/{upload_id}/result` adds nullable `transcript` and `transcript_error` fields. It reads the saved S3 text only after checking journal ownership, validates the exact object key, and limits reads to 256 KiB of UTF-8. No transcription/model calls, new routes, or new permissions are introduced; the v5 results role already permits reading transcript objects. Missing transcripts show an unavailable state. Read failures preserve the reflection and display a safe error. A frontend deployed against the older API also shows the unavailable state.
+
+Verify locally with `npm test`, `npm run build`, `npm run lint`, and (from the repo root, with boto3 installed) `python infra/test-history-v5.py`. Before using real journals, verify the deployed endpoint with two separate test accounts: each owner can read their saved transcript, and the other account receives 404. Nothing in this change deploys AWS resources automatically.
+
 F1 is implemented first, as requested by the execution brief: independent deterministic mock UI, typed repository API client, routes, upload/preview, history filters, status evolution/polling, transcript/analysis, video region, deletion, retry states, and tests. F2 is also integrated and verified against the repository’s existing FastAPI API with its mock processor, using the development proxy; see `VERIFICATION.md` for the actual observations. Optional F3 FFmpeg.wasm trimming is the next separate milestone after integration; no trim button pretends it already exists.
 
 ## API modes

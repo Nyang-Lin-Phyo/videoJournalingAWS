@@ -22,7 +22,11 @@ You do not need the Vite development server, FastAPI, a database, FFmpeg, Whispe
 | `pages.test.tsx`      | Renders the actual React UI using an in-memory router. Checks empty history and upload links, completed detail fields and mock labeling, history filters, retryable errors, oversized-file prevention, retained-file retry, duplicate-submit protection, preview URL cleanup, plain-text rendering of HTML-like content, empty analysis lists, delete dialog cancel/focus behavior, confirmed deletion and navigation, missing entries, and file extension/MIME/empty/30 MiB boundary validation. | `npm run test:ui`              |
 | `setup.ts`            | Runs automatically before each test file. Adds DOM matchers such as `toBeVisible`, cleans up rendered React components after every test, restores spies and stubbed globals, and supplies a jsdom-compatible `window.scrollTo` stub. It is test support, not a standalone test command.                                                                                                                                                                                                           | Automatically loaded by Vitest |
 
-The suite currently contains **30 tests across four test files**. Vitest counts parameterized cases individually, so one `it.each(...)` may account for multiple tests.
+`transcript.test.tsx` checks preview truncation, intentional opening, full text and plain-text safety, keyboard focus containment/restoration, close controls, unavailable/processing states, and portal/scroll cleanup. `cloudTranscript.test.tsx` checks cloud history integration, transcript reading when the video fails, cleanup on tab changes, and compatibility with an older API response. Run both with `npx vitest run tests/transcript.test.tsx tests/cloudTranscript.test.tsx`.
+
+`cloudPreview.test.tsx` verifies that the local preview uses the cloud upload and history components, opens the transcript reader, and performs no network requests.
+
+The suite currently contains **38 tests across seven test files**. Vitest counts parameterized cases individually, so one `it.each(...)` may account for multiple tests.
 
 ## All available test commands
 

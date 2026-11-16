@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 BUCKET = os.environ['UPLOAD_BUCKET']
 TABLE = os.environ['JOURNAL_TABLE']
@@ -104,18 +104,44 @@ def handle_list(event, owner):
     return respond(200, {'journals': journals, 'next_token': cursor_encode(output.get('LastEvaluatedKey'))})
 
 
+def saved_transcript(row, upload_id, owner):
+    key = row.get('transcriptKey')
+    if not key:
+        return None, None
+    # Verify the exact key even after checking DynamoDB ownership. Never use a
+    # client-provided key or let a malformed row expose another journal's text.
+    if key not in (f'transcripts/{owner}/{upload_id}.txt', f'transcripts/{upload_id}.txt'):
+        return None, 'Unable to load the transcript. Please try again later.'
+    try:
+        body = s3.get_object(Bucket=BUCKET, Key=key)['Body']
+        try:
+            data = body.read(256 * 1024 + 1)
+        finally:
+            body.close()
+        if len(data) > 256 * 1024:
+            raise ValueError('Transcript exceeds limit')
+        return data.decode('utf-8'), None
+    except ClientError as exc:
+        if exc.response['Error']['Code'] in ('NoSuchKey', '404', 'NotFound'):
+            return None, None
+    except (ValueError, OSError, BotoCoreError):
+        pass
+    return None, 'Unable to load the transcript. Please try again later.'
+
+
 def handle_result(upload_id, owner):
     row = find_journal(upload_id, owner)
     if not row or row.get('status') == 'deleting':
         return respond(404, {'error': 'Journal not found'})
-    # No transcription text is sent to the browser. It stays in private S3
-    # for the original reflection-processing pipeline and deletion handling.
+    transcript, transcript_error = saved_transcript(row, upload_id, owner)
     return respond(200, {
         'upload_id': upload_id,
         'title': title_of(row),
         'created_at': row.get('createdAt'),
         'status': row.get('status', 'awaiting_upload'),
         'analysis': row.get('analysis'),
+        'transcript': transcript,
+        'transcript_error': transcript_error,
         'error': row.get('error'),
     })
 

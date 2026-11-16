@@ -1,13 +1,13 @@
 
 import { useEffect, useRef, useState } from "react";
-import { useAuth } from "react-oidc-context";
 import { ErrorNotice } from "../components/Feedback";
 import { Icon } from "../components/Icon";
 import { VideoPreview } from "../components/VideoPreview";
 import { fileSize, validateVideo } from "../api/validation";
-import { uploadMp4 } from "./uploadToS3";
-import { fetchAnalysis, type AnalysisResult } from "./analysisApi";
+import type { AnalysisResult } from "./analysisApi";
+import { useCloudEnvironment } from "./CloudEnvironment";
 import { ReflectionPanel } from "./ReflectionPanel";
+import { TranscriptPanel } from "../components/TranscriptPanel";
 
 type Result = {
   upload_id: string;
@@ -16,12 +16,13 @@ type Result = {
 
 export function CloudIngestPage({
   onUploaded,
+  active = true,
 }: {
   onUploaded?: () => void;
+  active?: boolean;
 }) {
-  const auth = useAuth();
-  const userSub = auth.user?.profile.sub ?? "";
-  const accessToken = auth.user?.access_token ?? "";
+  const { userSub, accessToken, services } = useCloudEnvironment();
+  const { fetchAnalysis, uploadMp4 } = services;
   const storageKey = `reverie_last_upload_${userSub}`;
 
   const [file, setFile] = useState<File | null>(null);
@@ -121,7 +122,7 @@ export function CloudIngestPage({
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [activeUploadId, accessToken, storageKey]);
+  }, [activeUploadId, accessToken, storageKey, fetchAnalysis]);
 
   function selectFile(selected: File | undefined) {
     if (!selected || busy.current) return;
@@ -526,6 +527,13 @@ export function CloudIngestPage({
               )}
           </div>
 
+          {active && analysisResult && (
+            <>
+              <TranscriptPanel key={activeUploadId} transcript={analysisResult.transcript} title={displayTitle}
+                pending={["awaiting_upload", "queued", "transcribing", "analyzing"].includes(analysisResult.status)} />
+              {analysisResult.transcript_error && <ErrorNotice message={analysisResult.transcript_error} />}
+            </>
+          )}
           {analysisResult?.analysis && (
             <ReflectionPanel
               reflection={analysisResult.analysis}

@@ -45,6 +45,9 @@ describe("journal screens", () => {
     expect(screen.getByText("friendship")).toBeVisible();
     expect(screen.getByText("An example, just for you")).toBeVisible();
     expect(screen.getByText("Demo/mock results")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /Read full transcript/ }));
+    expect(screen.getByRole("region", { name: "Full transcript" }).textContent).toBe(fixtureJournals[0].transcript);
+    fireEvent.click(screen.getByRole("button", { name: "Close transcript" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete entry" }));
     expect(
       screen.getByRole("dialog", { name: "Let this moment go?" }),

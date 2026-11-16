@@ -1,21 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { useAuth } from "react-oidc-context";
 import { ErrorNotice } from "../components/Feedback";
 import { Icon } from "../components/Icon";
 import { ReflectionPanel } from "./ReflectionPanel";
-import {
-  deleteJournal, fetchAnalysis, fetchJournals, fetchVideoUrl, renameJournal,
-  type AnalysisResult, type JournalSummary,
-} from "./analysisApi";
+import { TranscriptPanel } from "../components/TranscriptPanel";
+import type { AnalysisResult, JournalSummary } from "./analysisApi";
+import { useCloudEnvironment } from "./CloudEnvironment";
 
 const MAX_CACHED_VIDEOS = 3;
 
 export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
   active: boolean; refreshKey: number; onDeleted?: () => void;
 }) {
-  const auth = useAuth();
-  const token = auth.user?.access_token ?? "";
-  const userSub = auth.user?.profile.sub ?? "";
+  const { userSub, accessToken: token, services } = useCloudEnvironment();
+  const { deleteJournal, fetchAnalysis, fetchJournals, fetchVideoUrl, renameJournal } = services;
   const [journals, setJournals] = useState<JournalSummary[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(false);
@@ -88,7 +85,7 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [active, token, userSub, refreshKey]);
+  }, [active, token, userSub, refreshKey, fetchJournals]);
 
   async function loadMore() {
     if (!nextToken || !token || loadingMore) return;
@@ -248,7 +245,7 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
       <div className="page-heading history-intro">
         <div className="eyebrow">YOUR PRIVATE NOTEBOOK</div>
         <h1>Journal history.</h1>
-        <p>Revisit your moments. Click a title to open or close its video and reflection.</p>
+        <p>Revisit your moments. Click a title to open its video, transcript, and reflection.</p>
       </div>
       {listError && <ErrorNotice message={listError} />}
       {loadingList && <p className="muted">Loading journals…</p>}
@@ -298,6 +295,15 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
                       disabled={loadingDetail}
                       onClick={() => void retryVideo(journal.upload_id)}>Reload video</button>
                   </div>
+                )}
+                {active && openId === journal.upload_id && details.current.has(journal.upload_id) && (
+                  <>
+                    <TranscriptPanel transcript={details.current.get(journal.upload_id)?.transcript}
+                      title={journal.title || "Untitled"}
+                      pending={["awaiting_upload", "queued", "transcribing", "analyzing"].includes(details.current.get(journal.upload_id)!.status)} />
+                    {details.current.get(journal.upload_id)?.transcript_error &&
+                      <ErrorNotice message={details.current.get(journal.upload_id)!.transcript_error!} />}
+                  </>
                 )}
                 {details.current.get(journal.upload_id)?.analysis &&
                   <ReflectionPanel reflection={details.current.get(journal.upload_id)!.analysis!}/>}
