@@ -468,15 +468,35 @@ def handle_account_delete(event, owner):
         return respond(503, {'error': 'Unable to continue account deletion. Please contact support.'})
     if not marker:
         try:
-            user = cognito.admin_get_user(UserPoolId=USER_POOL_ID, Username=email.strip())
+            # For Google-federated users the Cognito username is typically an
+            # IdP-prefixed value, not the email. Search by the trusted JWT sub.
+            # User input is used only to confirm the address, never to select
+            # which Cognito account to delete.
+            matches = cognito.list_users(
+                UserPoolId=USER_POOL_ID,
+                Filter=f'sub = "{owner}"',
+                Limit=10,
+            ).get('Users', [])
+            candidates = [
+                candidate for candidate in matches
+                if any(attribute.get('Name') == 'sub' and attribute.get('Value') == owner
+                       for attribute in candidate.get('Attributes', []))
+            ]
+            if len(candidates) != 1 or not candidates[0].get('Username'):
+                return respond(503, {'error': 'Unable to verify the account identity. Please retry.'})
+            username = candidates[0]['Username']
+            # Strongly verify the exact user after the eventually consistent search.
+            user = cognito.admin_get_user(UserPoolId=USER_POOL_ID, Username=username)
         except ClientError as exc:
-            if exc.response['Error']['Code'] == 'UserNotFoundException':
-                return respond(404, {'error': 'The account email does not match the signed-in user.'})
+            if exc.response.get('Error', {}).get('Code') == 'UserNotFoundException':
+                return respond(503, {'error': 'Unable to verify the account identity. Please retry.'})
             return respond(503, {'error': 'Unable to verify the account. Please retry.'})
         except BotoCoreError:
             return respond(503, {'error': 'Unable to verify the account. Please retry.'})
         attributes = {item['Name']: item['Value'] for item in user.get('UserAttributes', [])}
-        if attributes.get('sub') != owner:
+        if (attributes.get('sub') != owner or
+                attributes.get('email', '').casefold() != email.strip().casefold() or
+                user.get('Username') != username):
             return respond(404, {'error': 'The account email does not match the signed-in user.'})
         now = int(time.time())
         try:

@@ -36,7 +36,7 @@ cat > "$GEN/management-policy.json" <<EOF
 {"Effect":"Allow","Action":["dynamodb:UpdateItem","dynamodb:DeleteItem","dynamodb:PutItem"],"Resource":"${JOURNAL_TABLE_ARN}"},
 {"Effect":"Allow","Action":["s3:DeleteObject","s3:DeleteObjectVersion"],"Resource":["arn:aws:s3:::${UPLOAD_BUCKET}/uploads/*","arn:aws:s3:::${UPLOAD_BUCKET}/transcripts/*","arn:aws:s3:::${UPLOAD_BUCKET}/results/*"]},
 {"Effect":"Allow","Action":"s3:ListBucketVersions","Resource":"arn:aws:s3:::${UPLOAD_BUCKET}","Condition":{"StringLike":{"s3:prefix":["uploads/*","transcripts/*","results/*"]}}},
-{"Effect":"Allow","Action":["cognito-idp:AdminGetUser","cognito-idp:AdminDeleteUser"],"Resource":"arn:aws:cognito-idp:${AWS_REGION}:${AWS_ACCOUNT}:userpool/${USER_POOL_ID}"}
+{"Effect":"Allow","Action":["cognito-idp:AdminGetUser","cognito-idp:AdminDeleteUser","cognito-idp:ListUsers"],"Resource":"arn:aws:cognito-idp:${AWS_REGION}:${AWS_ACCOUNT}:userpool/${USER_POOL_ID}"}
 ]}
 EOF
 aws iam put-role-policy --role-name "$RESULT_ROLE" --policy-name ReverieV5ManageOwnedJournals --policy-document "file://$GEN/management-policy.json"

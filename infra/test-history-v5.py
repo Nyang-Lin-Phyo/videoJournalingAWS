@@ -8,7 +8,6 @@ from pathlib import Path
 from uuid import UUID
 
 from botocore.exceptions import ClientError
-from boto3.dynamodb.types import TypeDeserializer
 
 os.environ.update({
     'AWS_EC2_METADATA_DISABLED': 'true', 'AWS_ACCESS_KEY_ID': 'fake',
@@ -41,12 +40,13 @@ class FakeTable:
         self.meta.client = self
 
     def transact_write_items(self, TransactItems):
-        deserialize = TypeDeserializer().deserialize
         check, put = TransactItems
-        marker_key = deserialize(check['ConditionCheck']['Key']['uploadId'])
+        marker_key = check['ConditionCheck']['Key']['uploadId']
+        assert isinstance(marker_key, str), 'DynamoDB resource expects native values'
         if marker_key in self.rows:
             raise condition_failed()
-        item = {key: deserialize(value) for key, value in put['Put']['Item'].items()}
+        item = dict(put['Put']['Item'])
+        assert isinstance(item['uploadId'], str), 'DynamoDB resource expects native values'
         self.rows[item['uploadId']] = item
 
     def put_item(self, Item, **kwargs):

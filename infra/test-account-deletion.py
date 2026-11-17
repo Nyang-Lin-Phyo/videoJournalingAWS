@@ -107,15 +107,26 @@ class FakeCognito:
         self.owner = owner
         self.deleted = False
 
+    def list_users(self, UserPoolId, Filter, Limit):
+        assert Filter == f'sub = "{self.owner}"'
+        assert Limit == 10
+        return {'Users': [{
+            'Username': 'Google_123',
+            'Attributes': [{'Name': 'sub', 'Value': self.owner}],
+        }]}
+
     def admin_get_user(self, UserPoolId, Username):
-        if Username != 'journal@example.com':
+        if Username != 'Google_123':
             raise ClientError(
                 {'Error': {'Code': 'UserNotFoundException', 'Message': 'Not found'}},
                 'AdminGetUser',
             )
         return {
             'Username': 'Google_123',
-            'UserAttributes': [{'Name': 'sub', 'Value': self.owner}],
+            'UserAttributes': [
+                {'Name': 'sub', 'Value': self.owner},
+                {'Name': 'email', 'Value': 'journal@example.com'},
+            ],
         }
 
     def admin_delete_user(self, UserPoolId, Username):
