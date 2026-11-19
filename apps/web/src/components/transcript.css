@@ -12,7 +12,7 @@
 .transcript-close:hover { background: var(--cream); }
 .transcript-reader-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 28px 36px; scrollbar-color: var(--brick) transparent; }
 .transcript-reader-body:focus-visible { outline: 2px solid var(--brick); outline-offset: -5px; }
-.transcript-reader-body p { max-width: 70ch; margin: 0 auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 17px; line-height: 1.95; }
+.transcript-reader-body > p { max-width: 70ch; margin: 0 auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 17px; line-height: 1.95; }
 .transcript-reader-footer { padding: 15px 36px; border-top: 1px solid var(--line); font: italic 16px var(--serif); }
 @media (max-width: 680px) {
   .transcript-backdrop { padding: 12px; }
@@ -20,6 +20,6 @@
   .transcript-reader-header { padding: 22px; }
   .transcript-reader-header h2 { font-size: 30px; }
   .transcript-reader-body { padding: 22px; }
-  .transcript-reader-body p { font-size: 16px; }
+  .transcript-reader-body > p { font-size: 16px; }
   .transcript-reader-footer { padding-inline: 22px; }
 }

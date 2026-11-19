@@ -88,6 +88,7 @@
 .settings-panel-heading h2 {
   margin: 0;
   font-size: 20px;
+  color: var(--brick);
 }
 .settings-close {
   justify-content: center;
