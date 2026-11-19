@@ -143,6 +143,16 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
             status: entry.status, sentiment: entry.analysis?.sentiment ?? null,
           })), next_token: null };
         },
+        async fetchJournalMonth(_token, month) {
+          // The local preview derives its calendar from the same fictional entries.
+          const all = Array.from(entries.values());
+          return { journals: all.filter(entry => {
+            const date = new Date(entry.created_at);
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}` === month;
+          }).map(entry => ({ upload_id: entry.upload_id, title: entry.title,
+            created_at: entry.created_at, status: entry.status,
+            sentiment: entry.analysis?.sentiment ?? null })), next_token: null };
+        },
         async fetchAnalysis(id) {
           const entry = get(id);
           return entry.analysis

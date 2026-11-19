@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ErrorNotice } from "../components/Feedback";
 import { Icon } from "../components/Icon";
 import { ReflectionPanel } from "./ReflectionPanel";
@@ -8,6 +8,8 @@ import { useCloudEnvironment } from "./CloudEnvironment";
 import { useTimelineScroll } from "./useTimelineScroll";
 import { DayStackDialog } from "./DayStackDialog";
 import { blendedCover, statusLabel } from "./historyTimeline";
+import { CalendarOverview } from "./CalendarOverview";
+import { localDayKey, monthKeyFromDate, monthOfDay } from "./calendarDates";
 
 const MAX_CACHED_VIDEOS = 3;
 // How far each card reaches away from the spine (0 = close, 1 = farthest).
@@ -15,17 +17,13 @@ const MAX_CACHED_VIDEOS = 3;
 // cards jumping around when the list re-renders.
 const BRANCH_OFFSETS = [0.05, 0.24, 1, 0.12, 0.68, 0.06, 0.32, 0.55, 0.14];
 
-/** Local calendar day, so a late-evening upload stays on the day it was made. */
-function dayKey(value: string) {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
-}
+const dayKey = localDayKey;
 
 export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
   active: boolean; refreshKey: number; onDeleted?: () => void;
 }) {
   const { userSub, accessToken: token, services } = useCloudEnvironment();
-  const { deleteJournal, fetchAnalysis, fetchJournals, fetchVideoUrl, renameJournal } = services;
+  const { deleteJournal, fetchAnalysis, fetchJournals, fetchJournalMonth, fetchVideoUrl, renameJournal } = services;
   const [journals, setJournals] = useState<JournalSummary[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(false);
@@ -48,6 +46,17 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
   const [videoErrorId, setVideoErrorId] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const lastLoadedListKey = useRef<string | null>(null);
+  const [mode, setMode] = useState<"timeline" | "calendar">("timeline");
+  const [calendarMonth, setCalendarMonth] = useState(() => monthKeyFromDate(new Date()));
+  const [loadingMonth, setLoadingMonth] = useState<string | null>(null);
+  const [monthError, setMonthError] = useState<{ month: string; message: string } | null>(null);
+  const [monthVersion, setMonthVersion] = useState(0);
+  const monthCache = useRef(new Map<string, JournalSummary[]>());
+  const pendingMonths = useRef(new Map<string, Promise<JournalSummary[]>>());
+  const visibleTimelineMonth = useRef(monthKeyFromDate(new Date()));
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [jumpTarget, setJumpTarget] = useState<{ kind: "latest" | "day"; day?: string } | null>(null);
+  const [emptyMonth, setEmptyMonth] = useState<string | null>(null);
 
   useEffect(() => () => {
     request.current?.abort();
@@ -57,13 +66,111 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
     details.current.clear();
   }, []);
 
+  // Re-entering Journal History always starts with Timeline and the newest day.
+  // Keep the component mounted so private video buffers survive tab changes.
+  useEffect(() => {
+    if (!active) return;
+    setMode("timeline");
+    setEmptyMonth(null);
+    setJumpTarget({ kind: "latest" });
+  }, [active]);
+
+  // Read a selected month through the existing owner-scoped GSI query. Cache
+  // summaries in memory and never request video/transcript/model data here.
+  async function ensureMonth(month: string): Promise<JournalSummary[]> {
+    const cached = monthCache.current.get(month);
+    if (cached) return cached;
+    const pending = pendingMonths.current.get(month);
+    if (pending) return pending;
+    const run = (async () => {
+      const all: JournalSummary[] = [];
+      const seen = new Set<string>();
+      let next: string | null = null;
+      for (let page = 0; page < 100; page++) {
+        const result = await fetchJournalMonth(token, month, undefined, next ?? undefined);
+        for (const journal of result.journals) {
+          if (!seen.has(journal.upload_id)) {
+            seen.add(journal.upload_id);
+            all.push(journal);
+          }
+        }
+        next = result.next_token;
+        if (!next) {
+          monthCache.current.set(month, all);
+          setMonthVersion(value => value + 1);
+          return all;
+        }
+      }
+      throw new Error("Too many journal pages in this month; please try again later.");
+    })();
+    pendingMonths.current.set(month, run);
+    try { return await run; }
+    finally { pendingMonths.current.delete(month); }
+  }
+
+  // Debounce month changes while the calendar's native scroll momentum settles.
+  useEffect(() => {
+    if (!active || mode !== "calendar" || !token) return;
+    const month = calendarMonth;
+    if (monthCache.current.has(month)) return;
+    const timer = window.setTimeout(() => {
+      setLoadingMonth(month);
+      setMonthError(null);
+      void ensureMonth(month)
+        .catch(error => setMonthError({ month, message: error instanceof Error ? error.message : "Unable to load this month." }))
+        .finally(() => setLoadingMonth(current => current === month ? null : current));
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [active, mode, calendarMonth, token, fetchJournalMonth]);
+
+  function showHeader() {
+    const element = headerRef.current;
+    if (element) window.scrollTo({ top: Math.max(0, window.scrollY + element.getBoundingClientRect().top - 78), behavior: "instant" });
+  }
+
+  function switchToCalendar() {
+    if (!active) return;
+    setCalendarMonth(visibleTimelineMonth.current);
+    setMode("calendar");
+    setStackKey(null);
+    setOpenId(null);
+    window.requestAnimationFrame(showHeader);
+  }
+
+  async function switchToTimeline(selectedDay?: string) {
+    if (!active) return;
+    const month = calendarMonth;
+    setLoadingMonth(month);
+    setMonthError(null);
+    try {
+      const all = await ensureMonth(month);
+      // Merge older monthly summaries into timeline (20-item list may not
+      // include the target month); keep the ordinary pagination cursor intact.
+      setJournals(existing => {
+        const merged = new Map(existing.map(journal => [journal.upload_id, journal]));
+        all.forEach(journal => merged.set(journal.upload_id, journal));
+        return [...merged.values()];
+      });
+      visibleTimelineMonth.current = month;
+      setEmptyMonth(all.length === 0 ? month : null);
+      setJumpTarget(all.length ? { kind: "day", day: selectedDay ?? localDayKey(all.reduce((latest, item) =>
+        Date.parse(item.created_at) > Date.parse(latest.created_at) ? item : latest).created_at) } : null);
+      setMode("timeline");
+      window.requestAnimationFrame(showHeader);
+    } catch (error) {
+      setMonthError({ month, message: error instanceof Error ? error.message : "Unable to open this month." });
+    } finally {
+      setLoadingMonth(current => current === month ? null : current);
+    }
+  }
+
   // Keep the player mounted (and its browser-managed buffer) when hidden,
   // but never let audio continue playing after collapse or tab navigation.
   useEffect(() => {
     mediaElements.current.forEach((element, id) => {
-      if (!active || id !== openId) element.pause();
+      if (!active || mode !== "timeline" || id !== openId) element.pause();
     });
-  }, [active, openId]);
+  }, [active, openId, mode]);
 
   useEffect(() => {
     if (!active || !token || !userSub) return;
@@ -101,6 +208,12 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
       controller.abort();
     };
   }, [active, token, userSub, refreshKey, fetchJournals]);
+
+  useEffect(() => {
+    monthCache.current.clear();
+    pendingMonths.current.clear();
+    setMonthVersion(n => n + 1);
+  }, [userSub, refreshKey]);
 
   async function loadMore() {
     if (!nextToken || !token || loadingMore) return;
@@ -217,6 +330,12 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
     try {
       const updated = await renameJournal(journal.upload_id, title, token);
       setJournals(old => old.map(entry => entry.upload_id === journal.upload_id ? {...entry, title: updated.title} : entry));
+      for (const [month, rows] of monthCache.current) {
+        if (rows.some(row => row.upload_id === journal.upload_id)) {
+          monthCache.current.set(month, rows.map(row => row.upload_id === journal.upload_id ? {...row, title: updated.title} : row));
+          setMonthVersion(value => value + 1);
+        }
+      }
       const cached = details.current.get(journal.upload_id);
       if (cached) details.current.set(journal.upload_id, {...cached, title: updated.title});
       setEditingId(null);
@@ -239,6 +358,12 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
       videos.current.delete(journal.upload_id);
       details.current.delete(journal.upload_id);
       setJournals(old => old.filter(entry => entry.upload_id !== journal.upload_id));
+      for (const [month, rows] of monthCache.current) {
+        if (rows.some(row => row.upload_id === journal.upload_id)) {
+          monthCache.current.set(month, rows.filter(row => row.upload_id !== journal.upload_id));
+          setMonthVersion(value => value + 1);
+        }
+      }
       // Close the day dialog once its last journal is gone.
       const removedDay = dayKey(journal.created_at);
       if (!journals.some(entry => entry.upload_id !== journal.upload_id && dayKey(entry.created_at) === removedDay)) {
@@ -278,6 +403,46 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
   }, [journals]);
   const timelineRef = useTimelineScroll<HTMLDivElement>(timeline.length);
   const stackGroup = stackKey ? timeline.find(group => group.key === stackKey && group.journals.length > 0) : undefined;
+  // Track whichever timeline day reaches the top of the viewport. Natural
+  // scrolling only: do not force timeline snapping or interfere with reading.
+  useEffect(() => {
+    if (!active || mode !== "timeline" || emptyMonth) return;
+    const root = timelineRef.current;
+    if (!root) return;
+    let frame = 0;
+    const watch = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const days = Array.from(root.querySelectorAll<HTMLElement>("[data-timeline-day]"));
+        const nearTop = days.find(day => day.getBoundingClientRect().bottom > 96) ?? days[days.length - 1];
+        const date = nearTop?.dataset.timelineDay;
+        if (date) visibleTimelineMonth.current = monthOfDay(date);
+      });
+    };
+    watch();
+    window.addEventListener("scroll", watch, { passive: true });
+    window.addEventListener("resize", watch);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", watch);
+      window.removeEventListener("resize", watch);
+    };
+  }, [active, mode, emptyMonth, timeline.length, timelineRef]);
+
+  useLayoutEffect(() => {
+    if (!active || mode !== "timeline" || !jumpTarget || !timeline.length) return;
+    const day = jumpTarget.kind === "latest" ? timeline[0]?.key : jumpTarget.day;
+    const target = Array.from(timelineRef.current?.querySelectorAll<HTMLElement>("[data-timeline-day]") ?? [])
+      .find(element => element.dataset.timelineDay === day);
+    if (!target) return;
+    const desired = Math.max(0, window.scrollY + target.getBoundingClientRect().top - 94);
+    window.scrollTo({ top: desired, behavior: "instant" });
+    visibleTimelineMonth.current = monthOfDay(day!);
+    setJumpTarget(null);
+  }, [active, mode, jumpTarget, timeline, timelineRef]);
+
+  const calendarData = useMemo(() => new Map(monthCache.current), [monthVersion]);
 
   function leaveDetail() {
     request.current?.abort();
@@ -365,16 +530,51 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
 
   return (
     <>
+      <div ref={headerRef} className="history-heading-bar">
       <div className="page-heading history-intro">
         <div className="eyebrow">YOUR PRIVATE NOTEBOOK</div>
         <h1>Journal history.</h1>
         <p>Revisit your moments. Click a title to open its video, transcript, and reflection. Days with several videos are stacked together.</p>
       </div>
+        <div className="history-view-switch" role="group" aria-label="Journal history view">
+          <button type="button" className={mode === "timeline" ? "is-selected" : ""}
+            aria-pressed={mode === "timeline"}
+            onClick={() => { if (mode === "calendar") void switchToTimeline(); }}>
+            Timeline
+          </button>
+          <button type="button" className={mode === "calendar" ? "is-selected" : ""}
+            aria-pressed={mode === "calendar"} onClick={() => { if (mode !== "calendar") switchToCalendar(); }}>
+            Calendar
+          </button>
+        </div>
+      </div>
+      {mode === "calendar" && <CalendarOverview
+        initialMonth={calendarMonth}
+        visibleMonth={calendarMonth}
+        onVisibleMonthChange={setCalendarMonth}
+        monthData={calendarData}
+        loading={loadingMonth === calendarMonth}
+        error={monthError?.month === calendarMonth ? monthError.message : null}
+        onSelectDay={day => { void switchToTimeline(day); }}
+      />}
+      {mode === "timeline" && emptyMonth && (
+        <section className="panel calendar-empty-timeline">
+          <h2>{new Date(Number(emptyMonth.slice(0, 4)), Number(emptyMonth.slice(5)) - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h2>
+          <p>No journals in this month yet.</p>
+          <button type="button" className="button button-secondary" onClick={() => {
+            setEmptyMonth(null);
+            setJumpTarget({kind: "latest"});
+          }}>Back to latest journals</button>
+        </section>
+      )}
       {listError && <ErrorNotice message={listError} />}
       {loadingList && <p className="muted">Loading journals…</p>}
-      {!loadingList && journals.length === 0 && !listError &&
+      {mode === "timeline" && !emptyMonth && !loadingList && journals.length === 0 && !listError &&
         <section className="panel" style={{padding:24}}><p>No journals yet. Upload your first moment to get started.</p></section>}
-      <div className="history-entries timeline" ref={timelineRef}>
+      <div className="history-entries timeline" ref={timelineRef}
+        style={{ display: mode === "timeline" && !emptyMonth ? "flex" : "none" }}
+        aria-hidden={mode !== "timeline" || !!emptyMonth}
+        inert={mode !== "timeline" || !!emptyMonth}>
         {timeline.length > 0 && <span className="tl-spine" aria-hidden="true"><span className="tl-spine-fill"/></span>}
         {timeline.length > 0 && <div className="tl-cap tl-cap-top" data-reveal><span className="tl-cap-dot"/>Today</div>}
         {timeline.map(group => {
@@ -387,7 +587,7 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
           return (
             <Fragment key={group.key}>
               {monthLabel && <div className="tl-month" data-reveal><span>{monthLabel}</span></div>}
-              <section data-reveal
+              <section data-reveal data-timeline-day={group.key}
                 className={`tl-item tl-mood-${isStack ? "mixed" : journal.sentiment ?? "pending"}${isOpen && !isStack ? " is-open" : ""}${isStack ? " is-stack" : ""}${index === 0 ? " is-latest" : ""}`}
                 style={{
                   "--tl-offset": BRANCH_OFFSETS[index % BRANCH_OFFSETS.length],
@@ -462,7 +662,7 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
           </div>
         )}
       </div>
-      {active && stackGroup && (
+      {active && mode === "timeline" && stackGroup && (
         <DayStackDialog
           date={stackGroup.date}
           journals={stackGroup.journals}

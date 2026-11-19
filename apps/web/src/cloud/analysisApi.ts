@@ -1,3 +1,4 @@
+import { localMonthRange } from "./calendarDates";
 
 export type Analysis = {
   sentiment: "positive" | "negative" | "neutral";
@@ -201,6 +202,19 @@ export async function fetchJournals(token: string, signal?: AbortSignal, nextTok
     headers: headers(token), cache: "no-store", signal,
   });
   if (!response.ok) throw new Error(`Unable to load journals (HTTP ${response.status}).`);
+  return response.json() as Promise<JournalHistory>;
+}
+
+/** Date-scoped summary fetch: no video, transcript, or model work. */
+export async function fetchJournalMonth(token: string, month: string, signal?: AbortSignal, nextToken?: string): Promise<JournalHistory> {
+  const [year, number] = month.split("-").map(Number);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || !year || !number) throw new Error("Invalid calendar month.");
+  const query = new URLSearchParams({ limit: "50", ...localMonthRange(month) });
+  if (nextToken) query.set("next_token", nextToken);
+  const response = await fetch(`${base()}/journals?${query}`, {
+    headers: headers(token), cache: "no-store", signal,
+  });
+  if (!response.ok) throw new Error(`Unable to load calendar month (HTTP ${response.status}).`);
   return response.json() as Promise<JournalHistory>;
 }
 

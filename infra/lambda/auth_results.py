@@ -103,9 +103,31 @@ def handle_list(event, owner):
         cursor = cursor_decode(query['next_token'], owner) if query.get('next_token') else None
     except (ValueError, TypeError, KeyError, OverflowError):
         return respond(400, {'error': 'Invalid pagination request'})
+    # Optional local-month UTC boundaries for the calendar. These use the
+    # existing userCreatedAt GSI and avoid querying all of a user's journals.
+    start, end = query.get('start'), query.get('end')
+    if (start is None) != (end is None):
+        return respond(400, {'error': 'Both start and end are required'})
+    bounds = None
+    if start is not None:
+        try:
+            # Restrict this path to one local calendar month (max 32 days).
+            if not (isinstance(start, str) and isinstance(end, str) and
+                    re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z', start) and
+                    re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z', end)):
+                raise ValueError()
+            from_date = datetime.fromisoformat(start.replace('Z', '+00:00'))
+            to_date = datetime.fromisoformat(end.replace('Z', '+00:00'))
+            if not (0 < (to_date - from_date).total_seconds() <= 32 * 86400):
+                raise ValueError()
+            bounds = (start, end)
+            if cursor and not (start <= cursor['userCreatedAt'] < end):
+                raise ValueError()
+        except (ValueError, OverflowError, TypeError):
+            return respond(400, {'error': 'Invalid calendar date range'})
     args = {
         'IndexName': 'userId-createdAt-index',
-        'KeyConditionExpression': Key('userId').eq(owner),
+        'KeyConditionExpression': Key('userId').eq(owner) & Key('userCreatedAt').between(*bounds) if bounds else Key('userId').eq(owner),
         'ScanIndexForward': False,
         'Limit': limit,
     }
