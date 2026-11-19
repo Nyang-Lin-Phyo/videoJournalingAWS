@@ -75,13 +75,18 @@ describe("first-run onboarding (issue #7)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Journal history" }));
     fireEvent.click(await screen.findByRole("button", { name: /One step at a time/ }));
-    const thought = await screen.findByRole("complementary", { name: "A gentle thought" });
+    // Biscuit delivers the recommendation; the reflection only points to him.
+    const thought = await screen.findByRole("region", { name: "Biscuit says" });
+    expect(thought).toHaveTextContent("A gentle thought");
     expect(thought).toHaveTextContent("hot chocolate");
+    expect(screen.getByText(/Biscuit has a gentle thought for you/)).toBeVisible();
+    expect(screen.queryByRole("complementary", { name: "A gentle thought" })).not.toBeInTheDocument();
 
     // Recommendations are not only for sad days: a positive entry can get a "been a while" nudge.
     fireEvent.click(screen.getByRole("button", { name: /A walk after class/ }));
-    expect(await screen.findByRole("complementary", { name: "Something you might be missing" }))
-      .toHaveTextContent("walks");
+    await waitFor(() => expect(screen.getByRole("region", { name: "Biscuit says" }))
+      .toHaveTextContent("Something you might be missing"));
+    expect(screen.getByRole("region", { name: "Biscuit says" })).toHaveTextContent("walks");
   });
 
   it("skip turns the flag on so onboarding is never shown again", async () => {
