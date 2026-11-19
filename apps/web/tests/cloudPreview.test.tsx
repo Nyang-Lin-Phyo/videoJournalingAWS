@@ -8,7 +8,7 @@ describe("cloud interface preview", () => {
   it("uses the cloud upload and history screens with local data and no network requests", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
-    render(<CloudPreviewApp />);
+    render(<CloudPreviewApp onboarded />);
     expect(screen.getByRole("heading", { name: "A moment for you." })).toBeVisible();
     expect(screen.getByRole("textbox", { name: /Journal title/ })).toBeVisible();
     expect(screen.queryByText("LOCAL MVP")).not.toBeInTheDocument();
@@ -24,7 +24,7 @@ describe("cloud interface preview", () => {
   });
 
   it("opens settings and makes preview deletion explicitly local-only", async () => {
-    render(<CloudPreviewApp />);
+    render(<CloudPreviewApp onboarded />);
     const streakCard = await screen.findByRole("button", { name: /Upload to start your streak/ });
     expect(streakCard).toHaveTextContent("Start a streak");
     fireEvent.click(streakCard);

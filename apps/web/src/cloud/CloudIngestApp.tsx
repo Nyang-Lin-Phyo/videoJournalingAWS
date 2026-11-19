@@ -4,9 +4,16 @@ import { Icon } from "../components/Icon";
 import { CloudIngestPage } from "./CloudIngestPage";
 import { CloudHistoryPage } from "./CloudHistoryPage";
 import { useCloudEnvironment } from "./CloudEnvironment";
-import type { StreakSummary } from "./analysisApi";
+import { InterestsPage } from "./InterestsPage";
+import { OnboardingFlow } from "./OnboardingFlow";
+import type { ProfileUpdate, StreakSummary, UserProfile } from "./analysisApi";
 
-type CloudView = "upload" | "history";
+type CloudView = "upload" | "history" | "interests";
+const VIEW_TITLES: Record<CloudView, string> = {
+  upload: "Upload a video",
+  history: "Journal history",
+  interests: "Your interests",
+};
 type CloudIngestAppProps = {
   accountEmail?: string;
   onSignOut?: () => Promise<void>;
@@ -31,6 +38,11 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
   const [deleteProgress, setDeleteProgress] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [settingsMessage, setSettingsMessage] = useState("");
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileUnavailable, setProfileUnavailable] = useState(false);
+  const [profileReloadKey, setProfileReloadKey] = useState(0);
+  // Opened once per load when the server flag is off; closing it does not change the flag.
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
   useEffect(() => {
@@ -62,6 +74,28 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [accessToken, services, streakRefreshKey, timezone]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    services.fetchProfile(accessToken, controller.signal)
+      .then(loaded => {
+        if (controller.signal.aborted) return;
+        setProfile(loaded);
+        setProfileUnavailable(false);
+        if (!loaded.onboarding_completed) setOnboardingOpen(true);
+      })
+      .catch(() => {
+        // Never block journaling: without a profile, onboarding is simply not shown.
+        if (!controller.signal.aborted) setProfileUnavailable(true);
+      });
+    return () => controller.abort();
+  }, [accessToken, services, profileReloadKey]);
+
+  async function saveProfile(update: ProfileUpdate) {
+    const saved = await services.saveProfile(accessToken, update);
+    setProfile(saved);
+    return saved;
+  }
 
   async function buyStreakFreeze() {
     setBuyingFreeze(true);
@@ -109,6 +143,9 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
       setDeleteConfirmation("");
       setRefreshKey(value => value + 1);
       setUploadRevision(value => value + 1);
+      setProfile(null);
+      setOnboardingOpen(false);
+      setProfileReloadKey(value => value + 1);
       if (!isPreview) await onAccountDeleted?.();
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Unable to delete your account. Please retry.");
@@ -134,6 +171,9 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
           </button>
           <button type="button" className={`nav-link ${view === "history" ? "active" : ""}`} onClick={() => setView("history")}>
             <Icon name="book" /> Journal history {view === "history" && <span className="nav-dot" />}
+          </button>
+          <button type="button" className={`nav-link ${view === "interests" ? "active" : ""}`} onClick={() => setView("interests")}>
+            <Icon name="heart" /> Your interests {view === "interests" && <span className="nav-dot" />}
           </button>
         </nav>
         <div className="streak-widget">
@@ -256,7 +296,7 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
       </aside>
       <div className="workspace">
         <header className="topbar">
-          <div className="breadcrumbs">Your notebook <span>/</span> <strong>{view === "upload" ? "Upload a video" : "Journal history"}</strong></div>
+          <div className="breadcrumbs">Your notebook <span>/</span> <strong>{VIEW_TITLES[view]}</strong></div>
           <div className="topbar-right"><span className="local-pill"><Icon name="shield" size={14} /> PRIVATE JOURNALS</span></div>
         </header>
         <main id="main-content" className="main-content">
@@ -274,9 +314,30 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
           <div style={{ display: view === "history" ? "block" : "none" }}>
             <CloudHistoryPage active={view === "history"} refreshKey={refreshKey} onDeleted={() => { setUploadRevision(n => n + 1); setRefreshKey(n => n + 1); }} />
           </div>
+          {view === "interests" && (
+            <InterestsPage
+              profile={profile}
+              unavailable={profileUnavailable}
+              onRetry={() => {
+                setProfileUnavailable(false);
+                setProfileReloadKey(value => value + 1);
+              }}
+              onSave={saveProfile}
+            />
+          )}
         </main>
         <footer className="footer"><span>Made for the moments in between.</span><span>YOUR WORDS. YOUR PACE.</span></footer>
       </div>
+      {onboardingOpen && profile && (
+        <OnboardingFlow
+          initial={profile}
+          onSave={saveProfile}
+          onDone={saved => {
+            if (saved) setProfile(saved);
+            setOnboardingOpen(false);
+          }}
+        />
+      )}
       {confirmingDelete && (
         <div className="account-dialog-backdrop">
           <section className="account-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-title" aria-describedby="delete-account-description">

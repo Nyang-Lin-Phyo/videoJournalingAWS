@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import sys
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID
@@ -15,6 +16,7 @@ os.environ.update({
     'UPLOAD_BUCKET': 'test-private-videos', 'JOURNAL_TABLE': 'test-journals',
 })
 ROOT = Path(__file__).resolve().parent / 'lambda'
+sys.path.insert(0, str(ROOT))
 
 
 def load(name):

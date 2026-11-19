@@ -2,9 +2,43 @@ import { useEffect, useState } from "react";
 import { CloudEnvironmentContext, type CloudEnvironment } from "./CloudEnvironment";
 import { CloudIngestApp } from "./CloudIngestApp";
 import { fixtureJournals } from "../mocks/fixtures";
-import type { AnalysisResult, StreakSummary } from "./analysisApi";
+import type { Analysis, AnalysisResult, StreakSummary, UserProfile } from "./analysisApi";
+import { COMFORT_FOOD_OPTIONS, INTEREST_OPTIONS, MOOD_BOOSTER_OPTIONS } from "./profileCatalog";
 
-function createPreview(): { environment: CloudEnvironment; dispose: () => void } {
+const EMPTY_PROFILE: UserProfile = {
+  onboarding_completed: false, interests: [], music: [], mood_boosters: [], comfort_foods: [],
+  music_note: "",
+};
+
+const labelOf = (options: { id: string; label: string }[], id?: string) =>
+  options.find(option => option.id === id)?.label.toLowerCase();
+
+// Fictional stand-ins for the worker's verified recommendations. The real ones
+// are written by Gemini from stated choices plus what it learned from journals.
+function previewSuggestion(profile: UserProfile, analysis: Analysis): Partial<Analysis> {
+  const food = labelOf(COMFORT_FOOD_OPTIONS, profile.comfort_foods[0]);
+  const booster = labelOf(MOOD_BOOSTER_OPTIONS, profile.mood_boosters[0]);
+  const interest = labelOf(INTEREST_OPTIONS, profile.interests[0]);
+  if (analysis.sentiment === "negative") {
+    const idea = food ?? booster ?? interest;
+    return {
+      suggestion_reason: "comfort",
+      suggestion: idea
+        ? `[DEMO] If it feels right, maybe make a little room for ${idea} later. It has seemed to help you before.`
+        : "[DEMO] If it feels right, maybe take a slow breath and give yourself a small, kind pause today.",
+    };
+  }
+  if (analysis.sentiment === "positive" && (interest || food)) {
+    return {
+      suggestion_reason: "been_a_while",
+      suggestion: `[DEMO] It has been a little while since ${interest ?? food} came up. Could be a nice one to fit in this week.`,
+    };
+  }
+  return {};
+}
+
+function createPreview(onboarded: boolean): { environment: CloudEnvironment; dispose: () => void } {
+  let profile: UserProfile = { ...EMPTY_PROFILE, onboarding_completed: onboarded };
   const entries = new Map<string, AnalysisResult>(fixtureJournals.slice(0, 3).map(journal => [journal.id, {
     upload_id: journal.id,
     title: ["A walk after class", "An ordinary day", "One step at a time"][Number(journal.id.slice(-1)) - 1]!,
@@ -95,7 +129,18 @@ function createPreview(): { environment: CloudEnvironment; dispose: () => void }
             status: entry.status, sentiment: entry.analysis?.sentiment ?? null,
           })), next_token: null };
         },
-        async fetchAnalysis(id) { return { ...get(id) }; },
+        async fetchAnalysis(id) {
+          const entry = get(id);
+          return entry.analysis
+            ? { ...entry, analysis: { ...entry.analysis, ...previewSuggestion(profile, entry.analysis) } }
+            : { ...entry };
+        },
+        async fetchProfile() { return { ...profile }; },
+        async saveProfile(_token, update) {
+          const { complete_onboarding: complete, ...stated } = update;
+          profile = { ...profile, ...stated, onboarding_completed: profile.onboarding_completed || Boolean(complete) };
+          return { ...profile };
+        },
         async fetchVideoUrl(id) {
           get(id);
           const url = videoUrls.get(id);
@@ -118,6 +163,7 @@ function createPreview(): { environment: CloudEnvironment; dispose: () => void }
           videoUrls.clear();
           awardedDays.clear();
           lastUploadDay = null;
+          profile = { ...EMPTY_PROFILE };
           streak = {
             current_streak: 0,
             longest_streak: 0,
@@ -165,8 +211,8 @@ function createPreview(): { environment: CloudEnvironment; dispose: () => void }
   };
 }
 
-export default function CloudPreviewApp() {
-  const [preview] = useState(createPreview);
+export default function CloudPreviewApp({ onboarded = false }: { onboarded?: boolean }) {
+  const [preview] = useState(() => createPreview(onboarded));
   useEffect(() => () => preview.dispose(), [preview]);
   return <CloudEnvironmentContext.Provider value={preview.environment}>
     <div style={{ padding: "8px 20px", display: "flex", justifyContent: "flex-end", gap: 16, alignItems: "center" }}>
