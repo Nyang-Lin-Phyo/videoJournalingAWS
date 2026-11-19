@@ -309,14 +309,372 @@
   .sidebar .settings-trigger {
     color: var(--brick);
   }
+  /* Three nav links don't fit beside the logo on a phone: give them their own
+     row as an even tab bar, icon above label. */
+  .sidebar .main-nav {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 12px;
+    min-width: 0;
+  }
+  .sidebar .main-nav .nav-link {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    min-height: 54px;
+    padding: 8px 4px;
+    text-align: center;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
   .streak-widget {
     grid-column: 1 / -1;
     margin: 10px 0 12px;
   }
+  /* Open just below the streak card, wherever the header ends up. */
   .streak-rewards {
-    position: fixed;
-    top: 145px;
-    left: 14px;
-    width: min(300px, calc(100vw - 28px));
+    top: calc(100% + 8px);
+    left: 0;
+    width: min(300px, 100%);
   }
+}
+
+/* ───────────── Journal history timeline ─────────────
+   Spine on the left (dates newest → oldest), branches reaching out to cards
+   at varying distances. Entries draw in as they scroll into view, and the
+   spine fills behind the reader. */
+.timeline, .stack-dialog {
+  --tl-ease: cubic-bezier(.22, 1, .36, 1);
+  --tl-spring: cubic-bezier(.34, 1.56, .64, 1);
+}
+.timeline {
+  --tl-date-w: 64px;
+  --tl-spine-w: 28px;
+  --tl-spine-x: calc(var(--tl-date-w) + var(--tl-spine-w) / 2);
+  --tl-reach: clamp(24px, 22vw, 340px);
+  --tl-card-w: 470px;
+  --tl-node-y: 45px;
+  position: relative;
+  gap: 18px;
+  padding-bottom: 8px;
+}
+.tl-spine {
+  position: absolute;
+  top: 14px;
+  bottom: 22px;
+  left: calc(var(--tl-spine-x) - 1.5px);
+  width: 3px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.tl-spine-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: top;
+  transform: scaleY(var(--tl-progress, 0));
+  background: linear-gradient(to bottom, var(--orange), var(--brick));
+  transition: transform .35s var(--tl-ease);
+}
+
+/* Caps: "Today" at the top, "Load more" / "Where it all began" at the end. */
+.tl-cap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: calc(var(--tl-spine-x) - 9px);
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--brick);
+}
+.tl-cap-dot {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--brick);
+  box-shadow: 0 0 0 5px var(--cream), 0 0 0 6px var(--line);
+}
+.tl-cap-end .tl-cap-dot { background: var(--cream); border: 3px solid var(--brick); }
+
+/* Month markers sit on the spine like chapter dividers. */
+.tl-month {
+  position: relative;
+  padding-left: calc(var(--tl-spine-x) + 22px);
+  margin-top: 8px;
+}
+.tl-month span {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--cream);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--brick);
+}
+.tl-month::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--tl-spine-x) - 5px);
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  background: var(--brick);
+}
+
+/* One entry: [date] [node on spine] [branch ──── card] */
+.tl-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  padding-left: var(--tl-spine-x);
+}
+.tl-date {
+  position: absolute;
+  left: 0;
+  top: calc(var(--tl-node-y) - 19px);
+  width: calc(var(--tl-date-w) - 10px);
+  text-align: right;
+  line-height: 1;
+  color: var(--brick);
+}
+.tl-date-day { display: block; font-family: var(--serif); font-size: 1.55rem; font-weight: 600; }
+.tl-date-month { display: block; margin-top: 3px; font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; opacity: .7; }
+.tl-node {
+  position: absolute;
+  left: calc(var(--tl-spine-x) - 8px);
+  top: calc(var(--tl-node-y) - 8px);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--cream);
+  border: 3px solid var(--brick);
+  z-index: 1;
+  transition: transform .3s var(--tl-spring), background .25s, box-shadow .25s;
+}
+.tl-item.is-latest .tl-node::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--orange);
+  animation: tl-ping 2.2s var(--tl-ease) infinite;
+}
+.tl-branch {
+  flex: none;
+  height: 2px;
+  margin-top: calc(var(--tl-node-y) - 1px);
+  width: calc(18px + var(--tl-offset, 0) * var(--tl-reach));
+  background: repeating-linear-gradient(90deg, var(--brick) 0 6px, transparent 6px 10px);
+  opacity: .55;
+  transform-origin: left;
+  transition: width .5s var(--tl-ease), opacity .25s, transform .55s var(--tl-ease);
+}
+.tl-card-slot {
+  position: relative;
+  flex: 0 1 var(--tl-card-w);
+  min-width: 0;
+  transition: flex-basis .5s var(--tl-ease), transform .3s var(--tl-ease);
+}
+.tl-card {
+  position: relative;
+  z-index: 2;
+  padding: 0;
+  transition: box-shadow .3s, border-color .3s;
+}
+.timeline .tl-card { padding: 0; }
+.tl-card .history-toggle { padding: 14px 18px 14px 14px; }
+/* The date already lives on the spine and the cover; keep this one for screen readers. */
+.tl-card .history-date { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.tl-text { flex: 1; min-width: 0; }
+.tl-text .history-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Cover "image": a mood-tinted tile with the day, standing in for a thumbnail. */
+.tl-cover {
+  position: relative;
+  flex: none;
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #fffaf3;
+  line-height: 1;
+  background: var(--tl-cover);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%);
+  transition: transform .4s var(--tl-ease);
+}
+.tl-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 25% 20%, rgb(255 255 255 / 38%), transparent 55%);
+}
+.tl-cover-day { font-family: var(--serif); font-size: 1.5rem; font-weight: 600; }
+.tl-cover-week { margin-top: 3px; font-size: .62rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; opacity: .9; }
+.tl-mood-positive { --tl-cover: linear-gradient(135deg, #f7c46b, #ef7d44); --tl-accent: #ef8a44; }
+.tl-mood-neutral  { --tl-cover: linear-gradient(135deg, #d9b48c, #a9785d); --tl-accent: #b0806a; }
+.tl-mood-negative { --tl-cover: linear-gradient(135deg, #8e7aa8, #56658f); --tl-accent: #6c6c9c; }
+.tl-mood-pending  { --tl-cover: linear-gradient(110deg, #e2c7a6 30%, #f1dcc2 50%, #e2c7a6 70%); --tl-accent: var(--brick); }
+.tl-mood-mixed    { --tl-accent: var(--orange); }
+.tl-mood-pending .tl-cover { background-size: 250% 100%; animation: tl-shimmer 1.8s linear infinite; color: var(--brick); }
+
+/* Hover / focus: the branch lights up and the card lifts toward the reader. */
+.tl-item:hover .tl-card-slot,
+.tl-item:focus-within .tl-card-slot { transform: translateY(-2px); }
+.tl-item:hover .tl-card,
+.tl-item:focus-within .tl-card { box-shadow: 0 10px 26px -14px rgb(159 71 64 / 55%); border-color: rgb(159 71 64 / 45%); }
+.tl-item:hover .tl-branch,
+.tl-item:focus-within .tl-branch { opacity: 1; background: repeating-linear-gradient(90deg, var(--tl-accent) 0 6px, transparent 6px 10px); }
+.tl-item:hover .tl-node,
+.tl-item:focus-within .tl-node { transform: scale(1.25); background: var(--tl-accent); box-shadow: 0 0 0 5px rgb(239 156 68 / 22%); }
+.tl-item:hover .tl-cover { transform: scale(1.06) rotate(-2deg); }
+
+/* Open: the card pulls in to the spine and takes the full width for the video. */
+.tl-item.is-open .tl-branch { width: 18px; opacity: 1; background: var(--brick); }
+.tl-item.is-open .tl-card-slot { flex-basis: 100%; transform: none; }
+.tl-item.is-open .tl-node { background: var(--brick); }
+.tl-item.is-open .history-detail { animation: tl-unfold .45s var(--tl-ease); }
+
+/* Scroll reveal: node pops, branch draws outward, then the card slides in. */
+.tl-item:not([data-visible="true"]) .tl-node { transform: scale(0); }
+.tl-item:not([data-visible="true"]) .tl-branch { transform: scaleX(0); }
+.tl-item:not([data-visible="true"]) .tl-card-slot { opacity: 0; }
+.tl-item:not([data-visible="true"]) .tl-date,
+.tl-month:not([data-visible="true"]),
+.tl-cap:not([data-visible="true"]) { opacity: 0; transform: translateY(10px); }
+.tl-item[data-visible="true"] .tl-node { transition-delay: var(--tl-delay, 0ms); }
+.tl-item[data-visible="true"] .tl-branch { transition-delay: calc(var(--tl-delay, 0ms) + 90ms); }
+.tl-item[data-visible="true"] .tl-card-slot { animation: tl-card-in .6s var(--tl-ease) backwards; animation-delay: calc(var(--tl-delay, 0ms) + 260ms); }
+.tl-date, .tl-month, .tl-cap { transition: opacity .5s var(--tl-ease), transform .5s var(--tl-ease); transition-delay: var(--tl-delay, 0ms); }
+
+/* Stacked day: paper layers peek out behind the front card and fan out on hover. */
+.tl-item.is-stack { margin-top: 10px; }
+.tl-item.is-stack .tl-card-slot { margin-right: 24px; }
+.tl-stack-layer {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ecd5b8;
+  transition: transform .45s var(--tl-spring), box-shadow .3s;
+}
+.tl-stack-layer-1 { z-index: 1; transform: translate(10px, -10px); }
+.tl-stack-layer-2 { z-index: 0; transform: translate(20px, -20px); background: #e3c6a4; }
+.tl-item.is-stack:hover .tl-stack-layer-1,
+.tl-item.is-stack:focus-within .tl-stack-layer-1 { transform: translate(14px, -13px) rotate(1.5deg); }
+.tl-item.is-stack:hover .tl-stack-layer-2,
+.tl-item.is-stack:focus-within .tl-stack-layer-2 { transform: translate(28px, -24px) rotate(3deg); box-shadow: 0 8px 20px -14px rgb(159 71 64 / 60%); }
+.tl-item[data-visible="true"] .tl-stack-layer { animation: tl-layer-in .7s var(--tl-spring) backwards; animation-delay: calc(var(--tl-delay, 0ms) + 520ms); }
+.tl-stack-count {
+  position: absolute;
+  z-index: 3;
+  top: -9px;
+  left: -9px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  box-shadow: 0 0 0 3px var(--cream);
+  transition: transform .35s var(--tl-spring);
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: .66rem;
+  font-weight: 800;
+  background: var(--brick);
+  color: var(--cream);
+}
+.tl-item.is-stack:hover .tl-stack-count { transform: scale(1.15); }
+.tl-stack-titles { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes tl-layer-in { from { transform: translate(0, 0); opacity: 0; } }
+
+/* Day dialog: a grid of that day's videos, then one journal's full detail. */
+.stack-dialog { border-top-color: var(--brick); }
+.stack-body { padding: 26px 32px; }
+.stack-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 18px; }
+.stack-tile {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--cream);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: tl-card-in .5s var(--tl-ease) backwards;
+  animation-delay: calc(var(--stack-i, 0) * 70ms);
+  transition: transform .3s var(--tl-ease), box-shadow .3s, border-color .3s;
+}
+.stack-tile:hover, .stack-tile:focus-visible { transform: translateY(-3px); border-color: rgb(159 71 64 / 45%); box-shadow: 0 14px 28px -18px rgb(159 71 64 / 70%); }
+.stack-thumb {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #fffaf3;
+  background: var(--tl-cover);
+}
+.stack-thumb svg { padding: 12px; width: 52px; height: 52px; border-radius: 50%; background: rgb(255 255 255 / 22%); backdrop-filter: blur(2px); transition: transform .35s var(--tl-spring); }
+.stack-tile:hover .stack-thumb svg { transform: scale(1.12); }
+.tl-mood-pending .stack-thumb { background-size: 250% 100%; animation: tl-shimmer 1.8s linear infinite; color: var(--brick); }
+.stack-time { position: absolute; left: 8px; bottom: 8px; padding: 3px 8px; border-radius: 999px; font-size: .72rem; font-weight: 700; background: rgb(55 27 24 / 45%); color: #fffaf3; }
+.stack-tile-text { padding: 0 4px; min-width: 0; }
+.stack-tile-text .history-title { overflow-wrap: anywhere; }
+.stack-detail { animation: tl-unfold .4s var(--tl-ease); }
+.stack-detail-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+.stack-detail-head h3 { margin: 0; font-family: var(--serif); font-size: 1.6rem; overflow-wrap: anywhere; }
+.stack-detail-head p { margin: 2px 0 0; }
+.stack-back { display: inline-flex; align-items: center; gap: 6px; }
+.stack-detail .history-detail { padding: 8px 0 0; border-top: 0; }
+
+@keyframes tl-card-in {
+  from { opacity: 0; transform: translateX(-22px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tl-ping {
+  0% { transform: scale(1); opacity: .9; }
+  80%, 100% { transform: scale(2.6); opacity: 0; }
+}
+@keyframes tl-shimmer { to { background-position: -150% 0; } }
+@keyframes tl-unfold {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 640px) {
+  .timeline { --tl-date-w: 0px; --tl-spine-w: 24px; --tl-reach: 22px; --tl-node-y: 39px; }
+  .tl-date { display: none; }
+  .tl-cover { width: 50px; height: 50px; }
+  .tl-card .history-toggle { padding: 12px; gap: 10px; }
+  .tl-item.is-stack .tl-card-slot { margin-right: 14px; }
+  .tl-stack-layer-1 { transform: translate(6px, -7px); }
+  .tl-stack-layer-2 { transform: translate(12px, -14px); }
+  .stack-body { padding: 18px; }
+  .stack-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tl-item .tl-card-slot, .tl-item .tl-node, .tl-item .tl-branch { opacity: 1; animation: none; }
+  .stack-tile, .stack-detail { animation: none; }
+  .tl-item:not([data-visible="true"]) .tl-node,
+  .tl-item:not([data-visible="true"]) .tl-branch { transform: none; }
+  .tl-item.is-latest .tl-node::after, .tl-mood-pending .tl-cover { animation: none; }
 }

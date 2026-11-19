@@ -1,12 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ErrorNotice } from "../components/Feedback";
 import { Icon } from "../components/Icon";
 import { ReflectionPanel } from "./ReflectionPanel";
 import { TranscriptPanel } from "../components/TranscriptPanel";
 import type { AnalysisResult, JournalSummary } from "./analysisApi";
 import { useCloudEnvironment } from "./CloudEnvironment";
+import { useTimelineScroll } from "./useTimelineScroll";
+import { DayStackDialog } from "./DayStackDialog";
+import { blendedCover, statusLabel } from "./historyTimeline";
 
 const MAX_CACHED_VIDEOS = 3;
+// How far each card reaches away from the spine (0 = close, 1 = farthest).
+// A fixed, irregular rhythm gives the hand-drawn "branching" feel without
+// cards jumping around when the list re-renders.
+const BRANCH_OFFSETS = [0.05, 0.24, 1, 0.12, 0.68, 0.06, 0.32, 0.55, 0.14];
+
+/** Local calendar day, so a late-evening upload stays on the day it was made. */
+function dayKey(value: string) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
 
 export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
   active: boolean; refreshKey: number; onDeleted?: () => void;
@@ -25,6 +38,8 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [version, setVersion] = useState(0);
+  // The day whose stacked journals are shown in the day dialog.
+  const [stackKey, setStackKey] = useState<string | null>(null);
   const details = useRef(new Map<string, AnalysisResult>());
   // Store short-lived S3 URLs, not downloaded MP4 blobs. The mounted <video>
   // elements retain the browser's buffered content across collapse/reopen.
@@ -224,6 +239,11 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
       videos.current.delete(journal.upload_id);
       details.current.delete(journal.upload_id);
       setJournals(old => old.filter(entry => entry.upload_id !== journal.upload_id));
+      // Close the day dialog once its last journal is gone.
+      const removedDay = dayKey(journal.created_at);
+      if (!journals.some(entry => entry.upload_id !== journal.upload_id && dayKey(entry.created_at) === removedDay)) {
+        setStackKey(key => key === removedDay ? null : key);
+      }
       setOpenId(null);
       setEditingId(null);
       try {
@@ -238,6 +258,109 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
     }
   }
 
+  // Newest day first. Several journals on one local day become a single
+  // stacked card; a month marker appears whenever the month changes.
+  const timeline = useMemo(() => {
+    const sorted = [...journals].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    const groups: { key: string; date: Date; journals: JournalSummary[] }[] = [];
+    for (const journal of sorted) {
+      const key = dayKey(journal.created_at);
+      const last = groups[groups.length - 1];
+      if (last?.key === key) last.journals.push(journal);
+      else groups.push({ key, date: new Date(journal.created_at), journals: [journal] });
+    }
+    const month = (date: Date) => date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    return groups.map((group, index) => ({
+      ...group,
+      index,
+      monthLabel: index === 0 || month(groups[index - 1].date) !== month(group.date) ? month(group.date) : null,
+    }));
+  }, [journals]);
+  const timelineRef = useTimelineScroll<HTMLDivElement>(timeline.length);
+  const stackGroup = stackKey ? timeline.find(group => group.key === stackKey && group.journals.length > 0) : undefined;
+
+  function leaveDetail() {
+    request.current?.abort();
+    request.current = null;
+    setOpenId(null);
+    setEditingId(null);
+    setDetailError(null);
+    setVideoErrorId(null);
+    setLoadingDetail(false);
+  }
+
+  function closeStack() {
+    leaveDetail();
+    setStackKey(null);
+  }
+
+  function renderDetail(journal: JournalSummary) {
+    const id = journal.upload_id;
+    const isOpen = openId === id;
+    const detail = details.current.get(id);
+    return (
+      <div className="history-detail" id={`journal-content-${id}`}
+        style={{ display: isOpen ? undefined : "none" }}
+        aria-hidden={!isOpen}>
+        {loadingDetail && <p className="muted">Loading your saved moment…</p>}
+        {detailError && <ErrorNotice message={detailError} />}
+        {journal.status !== "deleting" && videos.current.has(id) &&
+          <video
+            controls
+            preload="metadata"
+            playsInline
+            src={videos.current.get(id)}
+            aria-label={`Video for ${journal.title || "Untitled"}`}
+            ref={element => {
+              if (element) mediaElements.current.set(id, element);
+              else mediaElements.current.delete(id);
+            }}
+            onError={() => {
+              if (openId === id) setVideoErrorId(id);
+            }}
+          />}
+        {videoErrorId === id && isOpen && (
+          <div>
+            <p className="muted">The video couldn't load. Its private link may have expired.</p>
+            <button className="button button-secondary" type="button"
+              disabled={loadingDetail}
+              onClick={() => void retryVideo(id)}>Reload video</button>
+          </div>
+        )}
+        {active && isOpen && detail && (
+          <>
+            <TranscriptPanel transcript={detail.transcript}
+              title={journal.title || "Untitled"}
+              pending={["awaiting_upload", "queued", "transcribing", "analyzing"].includes(detail.status)} />
+            {detail.transcript_error && <ErrorNotice message={detail.transcript_error} />}
+          </>
+        )}
+        {detail?.analysis && <ReflectionPanel reflection={detail.analysis}/>}
+        {detail?.status === "failed" && <p className="muted">This reflection could not be completed.</p>}
+        {detail && !detail.analysis && detail.status !== "failed" &&
+          <p className="muted">Your reflection is still being prepared.</p>}
+        <div className="history-actions">
+          {editingId === id ? (
+            <form onSubmit={event => { event.preventDefault(); void saveTitle(journal); }} className="history-edit-form">
+              <label htmlFor={`rename-${id}`}>Edit title</label>
+              <input id={`rename-${id}`} value={editTitle} maxLength={100}
+                onChange={event => setEditTitle(event.target.value)} disabled={!!busyId}/>
+              <button className="button button-primary" type="submit" disabled={!!busyId || !editTitle.trim()}>Save title</button>
+              <button className="button button-secondary" type="button" disabled={!!busyId} onClick={() => setEditingId(null)}>Cancel</button>
+            </form>
+          ) : journal.status !== "deleting" ? (
+            <button type="button" className="button button-secondary" disabled={!!busyId}
+              onClick={() => { setEditTitle(journal.title || "Untitled"); setEditingId(id); setDetailError(null); }}>
+              Rename
+            </button>
+          ) : null}
+          <button type="button" className="button button-secondary history-delete" disabled={!!busyId}
+            onClick={() => void remove(journal)}>{busyId === id ? "Deleting…" : journal.status === "deleting" ? "Retry deletion" : "Delete journal"}</button>
+        </div>
+      </div>
+    );
+  }
+
   void version; // Trigger a render when a private video URL becomes available.
 
   return (
@@ -245,98 +368,111 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
       <div className="page-heading history-intro">
         <div className="eyebrow">YOUR PRIVATE NOTEBOOK</div>
         <h1>Journal history.</h1>
-        <p>Revisit your moments. Click a title to open its video, transcript, and reflection.</p>
+        <p>Revisit your moments. Click a title to open its video, transcript, and reflection. Days with several videos are stacked together.</p>
       </div>
       {listError && <ErrorNotice message={listError} />}
       {loadingList && <p className="muted">Loading journals…</p>}
       {!loadingList && journals.length === 0 && !listError &&
         <section className="panel" style={{padding:24}}><p>No journals yet. Upload your first moment to get started.</p></section>}
-      <div className="history-entries">
-        {journals.map(journal => (
-          <section className="panel history-entry" key={journal.upload_id}>
-            <button className="history-toggle" type="button" aria-expanded={openId === journal.upload_id}
-              aria-controls={`journal-content-${journal.upload_id}`} onClick={() => expand(journal)}>
-              <span>
-                <span className="history-title">{journal.title || "Untitled"}</span>
-                <span className="history-status">{journal.status === "completed" ? "Reflection ready" : journal.status === "deleting" ? "Cleanup needs attention" : journal.status === "failed" ? "Reflection unavailable" : "Preparing your reflection"}</span>
-              </span>
-              <span className="history-title-right">
-                <span className="history-date">{new Date(journal.created_at).toLocaleDateString()}</span>
-                <Icon name={openId === journal.upload_id ? "back" : "arrow"} size={18}/>
-              </span>
-            </button>
-            {/* Leave previously opened players mounted but hidden. That lets the
-                browser reuse buffered video data when a journal is reopened. */}
-            {(openId === journal.upload_id || videos.current.has(journal.upload_id)) && (
-              <div className="history-detail" id={`journal-content-${journal.upload_id}`}
-                style={{ display: openId === journal.upload_id ? undefined : "none" }}
-                aria-hidden={openId !== journal.upload_id}>
-                {loadingDetail && <p className="muted">Loading your saved moment…</p>}
-                {detailError && <ErrorNotice message={detailError} />}
-                {journal.status !== "deleting" && videos.current.has(journal.upload_id) &&
-                  <video
-                    controls
-                    preload="metadata"
-                    playsInline
-                    src={videos.current.get(journal.upload_id)}
-                    aria-label={`Video for ${journal.title || "Untitled"}`}
-                    ref={element => {
-                      if (element) mediaElements.current.set(journal.upload_id, element);
-                      else mediaElements.current.delete(journal.upload_id);
-                    }}
-                    onError={() => {
-                      if (openId === journal.upload_id) setVideoErrorId(journal.upload_id);
-                    }}
-                  />}
-                {videoErrorId === journal.upload_id && openId === journal.upload_id && (
-                  <div>
-                    <p className="muted">The video couldn't load. Its private link may have expired.</p>
-                    <button className="button button-secondary" type="button"
-                      disabled={loadingDetail}
-                      onClick={() => void retryVideo(journal.upload_id)}>Reload video</button>
+      <div className="history-entries timeline" ref={timelineRef}>
+        {timeline.length > 0 && <span className="tl-spine" aria-hidden="true"><span className="tl-spine-fill"/></span>}
+        {timeline.length > 0 && <div className="tl-cap tl-cap-top" data-reveal><span className="tl-cap-dot"/>Today</div>}
+        {timeline.map(group => {
+          const { date, index, monthLabel } = group;
+          const journal = group.journals[0];
+          const count = group.journals.length;
+          const isStack = count > 1;
+          const isOpen = isStack ? stackKey === group.key : openId === journal.upload_id;
+          const day = date.toLocaleDateString(undefined, { day: "numeric" });
+          return (
+            <Fragment key={group.key}>
+              {monthLabel && <div className="tl-month" data-reveal><span>{monthLabel}</span></div>}
+              <section data-reveal
+                className={`tl-item tl-mood-${isStack ? "mixed" : journal.sentiment ?? "pending"}${isOpen && !isStack ? " is-open" : ""}${isStack ? " is-stack" : ""}${index === 0 ? " is-latest" : ""}`}
+                style={{
+                  "--tl-offset": BRANCH_OFFSETS[index % BRANCH_OFFSETS.length],
+                  ...(isStack ? { "--tl-cover": blendedCover(group.journals) } : {}),
+                } as CSSProperties}>
+                <span className="tl-date" aria-hidden="true">
+                  <span className="tl-date-day">{day}</span>
+                  <span className="tl-date-month">{date.toLocaleDateString(undefined, { month: "short" })}</span>
+                </span>
+                <span className="tl-node" aria-hidden="true"/>
+                <span className="tl-branch" aria-hidden="true"/>
+                <div className="tl-card-slot">
+                  {isStack && <>
+                    {count > 2 && <span className="tl-stack-layer tl-stack-layer-2" aria-hidden="true"/>}
+                    <span className="tl-stack-layer tl-stack-layer-1" aria-hidden="true"/>
+                    <span className="tl-stack-count" aria-hidden="true">{count}</span>
+                  </>}
+                  <div className="panel history-entry tl-card">
+                    {isStack ? (
+                      <button className="history-toggle" type="button" aria-haspopup="dialog"
+                        aria-expanded={isOpen} onClick={() => { leaveDetail(); setStackKey(group.key); }}>
+                        <span className="tl-cover" aria-hidden="true">
+                          <span className="tl-cover-day">{day}</span>
+                          <span className="tl-cover-week">{date.toLocaleDateString(undefined, { weekday: "short" })}</span>
+                        </span>
+                        <span className="tl-text">
+                          <span className="history-title">{count} moments</span>
+                          <span className="history-status tl-stack-titles">
+                            {group.journals.map(entry => entry.title || "Untitled").join(" · ")}
+                          </span>
+                        </span>
+                        <span className="history-title-right">
+                          <span className="history-date">{date.toLocaleDateString()}</span>
+                          <Icon name="arrow" size={18}/>
+                        </span>
+                      </button>
+                    ) : (
+                      <>
+                        <button className="history-toggle" type="button" aria-expanded={isOpen}
+                          aria-controls={`journal-content-${journal.upload_id}`} onClick={() => expand(journal)}>
+                          <span className="tl-cover" aria-hidden="true">
+                            <span className="tl-cover-day">{day}</span>
+                            <span className="tl-cover-week">{date.toLocaleDateString(undefined, { weekday: "short" })}</span>
+                          </span>
+                          <span className="tl-text">
+                            <span className="history-title">{journal.title || "Untitled"}</span>
+                            <span className="history-status">{statusLabel(journal.status)}</span>
+                          </span>
+                          <span className="history-title-right">
+                            <span className="history-date">{date.toLocaleDateString()}</span>
+                            <Icon name={isOpen ? "back" : "arrow"} size={18}/>
+                          </span>
+                        </button>
+                        {/* Leave previously opened players mounted but hidden. That lets the
+                            browser reuse buffered video data when a journal is reopened. */}
+                        {(isOpen || videos.current.has(journal.upload_id)) && renderDetail(journal)}
+                      </>
+                    )}
                   </div>
-                )}
-                {active && openId === journal.upload_id && details.current.has(journal.upload_id) && (
-                  <>
-                    <TranscriptPanel transcript={details.current.get(journal.upload_id)?.transcript}
-                      title={journal.title || "Untitled"}
-                      pending={["awaiting_upload", "queued", "transcribing", "analyzing"].includes(details.current.get(journal.upload_id)!.status)} />
-                    {details.current.get(journal.upload_id)?.transcript_error &&
-                      <ErrorNotice message={details.current.get(journal.upload_id)!.transcript_error!} />}
-                  </>
-                )}
-                {details.current.get(journal.upload_id)?.analysis &&
-                  <ReflectionPanel reflection={details.current.get(journal.upload_id)!.analysis!}/>}
-                {details.current.get(journal.upload_id)?.status === "failed" && <p className="muted">This reflection could not be completed.</p>}
-                {details.current.has(journal.upload_id) &&
-                  !details.current.get(journal.upload_id)?.analysis &&
-                  details.current.get(journal.upload_id)?.status !== "failed" &&
-                  <p className="muted">Your reflection is still being prepared.</p>}
-                <div className="history-actions">
-                  {editingId === journal.upload_id ? (
-                    <form onSubmit={event => { event.preventDefault(); void saveTitle(journal); }} className="history-edit-form">
-                      <label htmlFor={`rename-${journal.upload_id}`}>Edit title</label>
-                      <input id={`rename-${journal.upload_id}`} value={editTitle} maxLength={100}
-                        onChange={event => setEditTitle(event.target.value)} disabled={!!busyId}/>
-                      <button className="button button-primary" type="submit" disabled={!!busyId || !editTitle.trim()}>Save title</button>
-                      <button className="button button-secondary" type="button" disabled={!!busyId} onClick={() => setEditingId(null)}>Cancel</button>
-                    </form>
-                  ) : journal.status !== "deleting" ? (
-                    <button type="button" className="button button-secondary" disabled={!!busyId}
-                      onClick={() => { setEditTitle(journal.title || "Untitled"); setEditingId(journal.upload_id); setDetailError(null); }}>
-                      Rename
-                    </button>
-                  ) : null}
-                  <button type="button" className="button button-secondary history-delete" disabled={!!busyId}
-                    onClick={() => void remove(journal)}>{busyId === journal.upload_id ? "Deleting…" : journal.status === "deleting" ? "Retry deletion" : "Delete journal"}</button>
                 </div>
-              </div>
-            )}
-          </section>
-        ))}
+              </section>
+            </Fragment>
+          );
+        })}
+        {timeline.length > 0 && (
+          <div className="tl-cap tl-cap-end" data-reveal>
+            <span className="tl-cap-dot"/>
+            {nextToken
+              ? <button type="button" className="button button-secondary" disabled={loadingMore}
+                  onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more journals"}</button>
+              : <span>Where it all began</span>}
+          </div>
+        )}
       </div>
-      {nextToken && <button type="button" className="button button-secondary" disabled={loadingMore}
-        onClick={() => void loadMore()} style={{marginTop:18}}>{loadingMore ? "Loading…" : "Load more journals"}</button>}
+      {active && stackGroup && (
+        <DayStackDialog
+          date={stackGroup.date}
+          journals={stackGroup.journals}
+          openId={openId}
+          onSelect={journal => expand(journal)}
+          onBack={leaveDetail}
+          onClose={closeStack}
+          renderDetail={journal => renderDetail(journal)}
+        />
+      )}
     </>
   );
 }
