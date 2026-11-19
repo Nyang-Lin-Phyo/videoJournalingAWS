@@ -17,12 +17,18 @@ from boto3.dynamodb.conditions import Key
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
+import user_profile
+
 BUCKET = os.environ['UPLOAD_BUCKET']
 TABLE = os.environ['JOURNAL_TABLE']
 USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
+# USERS table (issue #7). Optional so older deployments keep working; profile
+# routes return 503 until it is configured and the frontend then skips onboarding.
+USERS_TABLE = os.environ.get('USERS_TABLE', '')
 s3 = boto3.client('s3', config=Config(signature_version='s3v4'))
 table = boto3.resource('dynamodb').Table(TABLE)
 cognito = boto3.client('cognito-idp')
+users_table = boto3.resource('dynamodb').Table(USERS_TABLE) if USERS_TABLE else None
 UUID_RE = re.compile(r'^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$')
 SUB_RE = re.compile(r'^[0-9a-zA-Z_-]{1,128}$')
 ACTIVE = {'awaiting_upload', 'queued', 'transcribing', 'analyzing'}
@@ -375,6 +381,55 @@ def handle_buy_freeze(owner):
     return respond(409, {'error': 'Your streak balance changed. Please try again.'})
 
 
+def handle_get_profile(owner):
+    if users_table is None:
+        return respond(503, {'error': 'Profiles are not available yet.'})
+    item = users_table.get_item(Key={'userId': owner}, ConsistentRead=True).get('Item')
+    # Only stated preferences and the onboarding flag; learned data stays private.
+    return respond(200, user_profile.public_profile(item))
+
+
+def handle_put_profile(event, owner):
+    if users_table is None:
+        return respond(503, {'error': 'Profiles are not available yet.'})
+    raw = event.get('body') or '{}'
+    if len(raw) > 4096:
+        return respond(413, {'error': 'Profile request is too large'})
+    try:
+        body = json.loads(raw)
+    except (ValueError, TypeError):
+        return respond(400, {'error': 'Invalid JSON'})
+    try:
+        stated, complete = user_profile.validate_stated(body)
+    except user_profile.ProfileError as exc:
+        return respond(400, {'error': str(exc)})
+    now = datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+    # Update only stated attributes so learned signals written by the worker survive.
+    sets = ['interests = :interests', 'music = :music', 'moodBoosters = :boosters',
+            'comfortFoods = :foods', 'musicNote = :note', 'updatedAt = :now']
+    values = {
+        ':interests': stated['interests'],
+        ':music': stated['music'],
+        ':boosters': stated['moodBoosters'],
+        ':foods': stated['comfortFoods'],
+        ':note': stated['musicNote'],
+        ':now': now,
+    }
+    if complete:
+        # The first-run flag: once set it is never cleared by later edits.
+        sets += ['onboardingCompleted = :done', 'onboardingVersion = :version',
+                 'onboardingCompletedAt = if_not_exists(onboardingCompletedAt, :now)']
+        values[':done'] = True
+        values[':version'] = user_profile.ONBOARDING_VERSION
+    result = users_table.update_item(
+        Key={'userId': owner},
+        UpdateExpression='SET ' + ', '.join(sets),
+        ExpressionAttributeValues=values,
+        ReturnValues='ALL_NEW',
+    )
+    return respond(200, user_profile.public_profile(result.get('Attributes')))
+
+
 def account_marker(owner):
     return table.get_item(
         Key={'uploadId': account_marker_key(owner)},
@@ -553,6 +608,9 @@ def handle_account_delete(event, owner):
 
         if phase == 'streak':
             table.delete_item(Key={'uploadId': streak_key(owner)})
+            if users_table is not None:
+                # Removes stated preferences and all learned profile data.
+                users_table.delete_item(Key={'userId': owner})
             update_account_marker(owner, {'cleanupPhase': 'uploads'})
             return pending_account_delete('Removing your recordings.')
 
@@ -656,6 +714,10 @@ def handler(event, context):
         return handle_streak(event, owner)
     if route == 'POST /streak/freeze':
         return handle_buy_freeze(owner)
+    if route == 'GET /profile':
+        return handle_get_profile(owner)
+    if route == 'PUT /profile':
+        return handle_put_profile(event, owner)
     if route == 'GET /journals':
         return handle_list(event, owner)
     upload_id = upload_id_of(event)

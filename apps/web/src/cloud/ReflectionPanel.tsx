@@ -1,5 +1,12 @@
 import type { Analysis } from "./analysisApi";
 import { Icon } from "../components/Icon";
+import "./onboarding.css";
+
+const SUGGESTION_HEADINGS = {
+  comfort: "A gentle thought",
+  context_match: "A little idea for today",
+  been_a_while: "Something you might be missing",
+} as const;
 
 export function ReflectionPanel({ reflection }: { reflection: Analysis }) {
   return (
@@ -7,6 +14,15 @@ export function ReflectionPanel({ reflection }: { reflection: Analysis }) {
       <div className="section-label"><Icon name="spark" /> A MOMENT OF PERSPECTIVE</div>
       <h2 id="reflection-heading">Your reflection</h2>
       <div className="summary"><p>{reflection.summary}</p></div>
+      {reflection.suggestion?.trim() && (
+        <aside className="gentle-suggestion" aria-labelledby="gentle-suggestion-heading">
+          <Icon name="heart" size={18} />
+          <div>
+            <h3 id="gentle-suggestion-heading">{SUGGESTION_HEADINGS[reflection.suggestion_reason ?? "comfort"]}</h3>
+            <p>{reflection.suggestion}</p>
+          </div>
+        </aside>
+      )}
       <div className="analysis-section">
         <h3>Overall sentiment</h3>
         <span className={`sentiment sentiment-${reflection.sentiment}`}>{reflection.sentiment}</span>

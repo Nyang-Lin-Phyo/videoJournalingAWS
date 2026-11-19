@@ -205,6 +205,58 @@ paths:
           description: Journal still processing or versioning requires another deletion strategy
         '503':
           description: Cleanup incomplete; retry the request
+  /profile:
+    get:
+      tags:
+      - Profile
+      operationId: getMyProfile
+      summary: Stated preferences and the first-run onboarding flag (issue #7)
+      description: Returns only what the user chose. Signals learned from transcripts are
+        admin-side and never returned. 503 until the USERS table is deployed; clients
+        then skip onboarding.
+      responses:
+        '200':
+          description: Profile (defaults when no row exists yet)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Account deletion is in progress
+        '503':
+          description: Profiles are not configured
+    put:
+      tags:
+      - Profile
+      operationId: saveMyProfile
+      summary: Replace stated preferences; optionally complete onboarding
+      description: complete_onboarding true sets the server-side first-run flag (finish or
+        skip). Omitting it or sending false never clears the flag. Learned data is untouched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+      responses:
+        '200':
+          description: Saved profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Account deletion is in progress
+        '413':
+          description: Body larger than 4 KiB
+        '503':
+          description: Profiles are not configured
 components:
   securitySchemes:
     CognitoAccessToken:
@@ -350,6 +402,20 @@ components:
             type: string
         summary:
           type: string
+        suggestion:
+          type: string
+          maxLength: 400
+          description: Optional small recommendation built from the user's favourites
+            (activity, music, or comfort food), verified server-side (issue #7).
+        suggestion_reason:
+          type: string
+          enum:
+          - comfort
+          - context_match
+          - been_a_while
+          description: comfort for a heavier entry, context_match when today's situation
+            matches a favourite (e.g. sunny and lemonade), been_a_while for an occasional
+            nudge about a favourite not mentioned recently.
     JournalResult:
       type: object
       required:
@@ -443,3 +509,69 @@ components:
         expires_in:
           type: integer
           example: 900
+    UserProfile:
+      type: object
+      additionalProperties: false
+      required:
+      - onboarding_completed
+      - interests
+      - music
+      - mood_boosters
+      - comfort_foods
+      - music_note
+      properties:
+        onboarding_completed:
+          type: boolean
+        interests:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+          description: Ids from the shared catalog in infra/lambda/user_profile.py
+        music:
+          type: array
+          maxItems: 6
+          items:
+            type: string
+        mood_boosters:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+        comfort_foods:
+          type: array
+          maxItems: 6
+          items:
+            type: string
+        music_note:
+          type: string
+          maxLength: 80
+    ProfileUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        interests:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+        music:
+          type: array
+          maxItems: 6
+          items:
+            type: string
+        mood_boosters:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+        comfort_foods:
+          type: array
+          maxItems: 6
+          items:
+            type: string
+        music_note:
+          type: string
+          maxLength: 80
+        complete_onboarding:
+          type: boolean
