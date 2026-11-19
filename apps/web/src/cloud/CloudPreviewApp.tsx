@@ -48,6 +48,20 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
     analysis: journal.analysis,
     error: null,
   }]));
+  // Two more fictional entries on the same day as "An ordinary day", so the
+  // history timeline shows a stacked day in the preview.
+  const ordinaryDay = fixtureJournals[1]!;
+  ([
+    ["preview-stack-1", "Morning pages", "2026-10-25T19:10:00Z", "positive"],
+    ["preview-stack-2", "A long afternoon", "2026-10-25T19:45:00Z", "negative"],
+  ] as const).forEach(([id, title, createdAt, sentiment]) => {
+    entries.set(id, {
+      upload_id: id, title, created_at: createdAt, status: "completed",
+      transcript: `[DEMO TRANSCRIPT] ${title}. A fictional entry for the local preview.`,
+      analysis: ordinaryDay.analysis ? { ...ordinaryDay.analysis, sentiment } : null,
+      error: null,
+    });
+  });
   const videoUrls = new Map<string, string>();
   const awardedDays = new Set<string>();
   let streak: StreakSummary = {

@@ -23,6 +23,28 @@ describe("cloud interface preview", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("stacks same-day journals and opens each one from the day dialog", async () => {
+    render(<CloudPreviewApp onboarded />);
+    fireEvent.click(screen.getByRole("button", { name: "Journal history" }));
+    const stack = await screen.findByRole("button", { name: /3 moments/ });
+    expect(stack).toHaveTextContent("An ordinary day · A long afternoon · Morning pages");
+    // Single-day journals keep their own inline card.
+    expect(screen.getByRole("button", { name: /A walk after class/ })).not.toHaveAttribute("aria-haspopup");
+
+    fireEvent.click(stack);
+    const dialog = screen.getByRole("dialog");
+    const tiles = within(dialog).getAllByRole("listitem");
+    expect(tiles).toHaveLength(3);
+    fireEvent.click(within(dialog).getByRole("button", { name: /Morning pages/ }));
+    expect(await within(dialog).findByRole("heading", { name: "Morning pages" })).toBeVisible();
+    expect(await within(dialog).findByRole("button", { name: /Read full transcript/ })).toBeVisible();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /All moments/ }));
+    expect(within(dialog).getAllByRole("listitem")).toHaveLength(3);
+    fireEvent.keyDown(within(dialog).getByRole("list"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("opens settings and makes preview deletion explicitly local-only", async () => {
     render(<CloudPreviewApp onboarded />);
     const streakCard = await screen.findByRole("button", { name: /Upload to start your streak/ });
