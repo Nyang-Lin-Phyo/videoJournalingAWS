@@ -77,4 +77,12 @@ describe("login home page", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Missing VITE_COGNITO_* configuration");
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeDisabled();
   });
+
+  it("shows the workspace without the old top-right account bar once signed in", () => {
+    auth.isAuthenticated = true;
+    render(<AuthenticatedCloud />);
+    expect(screen.getByText("Your journal workspace")).toBeVisible();
+    expect(screen.queryByText(/Signed in as/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
+  });
 });

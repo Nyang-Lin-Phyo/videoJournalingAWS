@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -18,6 +19,7 @@ os.environ.update({
     'USER_POOL_ID': 'test-pool',
 })
 
+sys.path.insert(0, str(Path(__file__).parent / 'lambda'))
 spec = importlib.util.spec_from_file_location(
     'account_delete_results', Path(__file__).parent / 'lambda' / 'auth_results.py'
 )

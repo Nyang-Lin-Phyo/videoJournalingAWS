@@ -12,7 +12,7 @@ import legacy_elevenlabs_provider as provider
 class GeminiRetryTests(unittest.TestCase):
     def test_retryable_503_recovers(self):
         attempts=[]
-        def fake_once(_):
+        def fake_once(_transcript, _profile_context=None):
             attempts.append(1)
             if len(attempts)<3: raise RuntimeError('Gemini HTTP 503')
             return {'summary':'ok'}

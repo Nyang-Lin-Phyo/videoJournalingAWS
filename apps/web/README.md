@@ -63,6 +63,37 @@ Review the script and AWS account before running it; it sets the feature start t
 
 Run `python infra/test-streaks.py` for offline timezone, duplicate-event, freeze-purchase, and S3-event ordering checks.
 
+## Interests, onboarding, and personal recommendations (issue #7)
+
+On first sign-in, a short onboarding flow asks four questions: what the user enjoys, their music (with an optional favourite artist), what usually helps on heavier days, and their comfort food or drink. It shows one question per screen with chip selectors and a progress bar, and every screen can be skipped. Finishing or skipping sets `onboardingCompleted` on the user's row in the new DynamoDB **USERS** table (key `userId` = Cognito `sub`), so it appears once per account on any device. The sidebar's **Your interests** tab edits the same choices later without resetting the flag. If the profile API is unavailable, onboarding is skipped and journaling is never blocked. The top-right "Signed in as / Sign out" bar was removed; sign out is in **Settings**.
+
+**Favourites.** A favourite is an activity, music (a genre, artist or song), or food or drink. Favourites come from onboarding and from transcripts. The worker adds profile context to the **same** Gemini call that writes the reflection, and Gemini also returns `profile_signals`. Each signal has a kind, an item, a mood effect, whether it actually happened, a confidence score, an exact quote, and the situations the person ties it to (for example lemonade → `sunny`). Signals are checked before they count:
+- The quote must appear word for word in the transcript; if it doesn't, the signal's weight is halved.
+- Anything under 0.4 confidence after that check is ignored.
+- Intentions ("I should go to the gym") count only as a weak mention.
+
+Signals then go into admin-only `learned` attributes, which fade with a 60-day half-life. Reflection themes build `learnedTopics`. None of this is stored on the journal or returned to the user.
+
+**Ranking is behaviour-first** (`infra/lambda/user_profile.py`):
+- Each observed mood lift scores double, so one observed lift outranks any onboarding choice.
+- Onboarding choices start lower: "what helps" and comfort foods 1.0, the favourite artist 0.8, interests 0.5, music genres 0.4.
+- Anything that repeatedly coincides with lower mood is dropped, even if it was chosen during onboarding.
+
+**Recommendations.** Gemini also returns the situations it sees in today's transcript (`today_context`) and at most one candidate recommendation. There are three triggers:
+- `comfort`: the entry is sad, so suggest one favourite activity, song or comfort food. Shown as "A gentle thought".
+- `context_match`: today's situation matches a favourite's learned situations, whatever the mood ("sunny" + lemonade). Shown as "A little idea for today".
+- `been_a_while`: a well-liked observed favourite hasn't come up for 14+ days. Offered only when the last recommendation was at least 2 days ago, and then on about half of entries. The random choice is seeded by the upload ID, so retries agree. Shown as "Something you might be missing".
+
+`choose_recommendation` checks every candidate on the server and drops it if any rule fails:
+- The item must be one of the user's actual favourites.
+- For `context_match`, today's situation must overlap that favourite's learned situations.
+- For `been_a_while`, the item must have been offered as a nudge.
+- Non-comfort items suggested in the last 3 days are skipped.
+
+A dropped recommendation leaves the reflection unchanged. Shown recommendations are logged in `recommendationLog`. The worker and the API each update only their own attributes, so neither overwrites the other. Account deletion removes the USERS row.
+
+Deploy after streak v1, with the same review rules: `CONFIRM_PROFILE_V1=YES bash infra/deploy-profile-v1.sh`. Run `python infra/test-profile.py` for offline checks. In the local cloud preview, onboarding appears on every refresh. The negative fictional entry *One step at a time* shows a `[DEMO]` comfort recommendation, and *A walk after class* shows a `[DEMO]` "been a while" nudge, both built from your picks.
+
 Cloud mode needs the updated `infra/lambda/auth_results.py` deployed to the existing results Lambda, alongside the frontend. The existing JWT-protected `GET /uploads/{upload_id}/result` adds nullable `transcript` and `transcript_error` fields. It reads the saved S3 text only after checking journal ownership, validates the exact object key, and limits reads to 256 KiB of UTF-8. No transcription/model calls, new routes, or new permissions are introduced; the v5 results role already permits reading transcript objects. Missing transcripts show an unavailable state. Read failures preserve the reflection and display a safe error. A frontend deployed against the older API also shows the unavailable state.
 
 Verify locally with `npm test`, `npm run build`, `npm run lint`, and (from the repo root, with boto3 installed) `python infra/test-history-v5.py`. Before using real journals, verify the deployed endpoint with two separate test accounts: each owner can read their saved transcript, and the other account receives 404. Nothing in this change deploys AWS resources automatically.

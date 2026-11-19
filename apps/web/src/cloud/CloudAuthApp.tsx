@@ -40,18 +40,13 @@ export function AuthenticatedCloud() {
     const callback = encodeURIComponent(window.location.origin + "/");
     window.location.assign(`${cognitoDomain}/logout?client_id=${encodeURIComponent(clientId)}&logout_uri=${callback}`);
   }
-  return <>
-    <div style={{ padding: "8px 20px", display: "flex", justifyContent: "flex-end", gap: 16, alignItems: "center" }}>
-      <span>Signed in as {auth.user?.profile.email ?? "Google user"}</span>
-      <button type="button" onClick={() => void signOut()}>Sign out</button>
-    </div>
-    <CloudIngestApp
-      key={auth.user?.profile.sub ?? "anonymous"}
-      accountEmail={auth.user?.profile.email}
-      onSignOut={signOut}
-      onAccountDeleted={signOut}
-    />
-  </>;
+  // Sign out lives in the sidebar Settings panel (issue #7 removed the top-right bar).
+  return <CloudIngestApp
+    key={auth.user?.profile.sub ?? "anonymous"}
+    accountEmail={auth.user?.profile.email}
+    onSignOut={signOut}
+    onAccountDeleted={signOut}
+  />;
 }
 
 export function CloudAuthApp() {

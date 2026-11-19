@@ -10,8 +10,9 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote_plus
 from zoneinfo import ZoneInfo
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 import legacy_elevenlabs_provider as provider
+import user_profile
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -24,8 +25,79 @@ STREAK_AWARD_HISTORY_DAYS = 366
 STREAK_UPDATE_ATTEMPTS = 5
 STREAK_START_AT = os.environ.get('STREAK_START_AT')
 KEY_RE = re.compile(r'^uploads/([A-Za-z0-9_-]{1,128})/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\.mp4$')
+# Optional until the profile backend is deployed; personalization is skipped without it.
+USERS_TABLE = os.environ.get('USERS_TABLE')
+PROFILE_UPDATE_ATTEMPTS = 3
 s3 = boto3.client('s3')
 table = boto3.resource('dynamodb').Table(TABLE)
+users_table = boto3.resource('dynamodb').Table(USERS_TABLE) if USERS_TABLE else None
+
+
+def load_profile(owner):
+    """Read the USERS row for prompt context; never fails the journal."""
+    if users_table is None:
+        return None
+    try:
+        return users_table.get_item(Key={'userId': owner}, ConsistentRead=True).get('Item')
+    except (BotoCoreError, ClientError) as exc:
+        LOG.warning('Profile read skipped (%s)', type(exc).__name__)
+        return None
+
+
+def learn_from_journal(owner, upload_id, signals, profile, today=None,
+                       transcript=None, themes=(), recommendation=None):
+    """Fold one journal's admin-only signals and themes into the learned profile.
+
+    Signals are confidence-weighted and checked against the transcript (see
+    user_profile.clean_signals); themes become decayed recurring topics; a
+    shown recommendation is logged so it is not repeated and nudges stay
+    occasional. Writes only learned*/recommendationLog attributes, so stated
+    preferences set by the user are never overwritten. learnedFrom makes SQS
+    redelivery idempotent, and learnedVersion guards against concurrent workers.
+    """
+    cleaned = user_profile.clean_signals(signals, transcript)
+    has_topics = any(user_profile.normalize_topic(theme) for theme in themes or ())
+    if users_table is None or (not cleaned and not has_topics and not recommendation):
+        return False
+    today = today or datetime.now(timezone.utc).date()
+    item = profile
+    for attempt in range(PROFILE_UPDATE_ATTEMPTS):
+        if attempt:
+            item = users_table.get_item(Key={'userId': owner}, ConsistentRead=True).get('Item')
+        learned_from = list((item or {}).get('learnedFrom', []))
+        if upload_id in learned_from:
+            return False
+        version = int((item or {}).get('learnedVersion', 0))
+        learned = user_profile.merge_learned((item or {}).get('learned'), cleaned, today)
+        topics = user_profile.merge_topics((item or {}).get('learnedTopics'), themes, today)
+        log = user_profile.log_recommendation((item or {}).get('recommendationLog'), recommendation, today)
+        values = {
+            ':learned': learned,
+            ':topics': topics,
+            ':log': log,
+            ':from': (learned_from + [upload_id])[-user_profile.MAX_LEARNED_FROM:],
+            ':next': version + 1,
+            ':now': datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+        }
+        if version:
+            condition = 'learnedVersion = :version'
+            values[':version'] = version
+        else:
+            condition = 'attribute_not_exists(learnedVersion)'
+        try:
+            users_table.update_item(
+                Key={'userId': owner},
+                UpdateExpression='SET learned = :learned, learnedTopics = :topics, '
+                                 'recommendationLog = :log, learnedFrom = :from, '
+                                 'learnedVersion = :next, learnedUpdatedAt = :now',
+                ConditionExpression=condition,
+                ExpressionAttributeValues=values,
+            )
+            return True
+        except ClientError as exc:
+            if exc.response['Error']['Code'] != 'ConditionalCheckFailedException':
+                raise
+    raise RuntimeError('Profile update contention exceeded retry limit')
 
 
 def parse_upload_time(raw):
@@ -249,7 +321,25 @@ def process_object(bucket, key, event_time=None):
         transcript, transcript_key = get_transcript(row,upload_id,owner,key)
         update_owned(upload_id,token,'#s=:s, transcriptKey=:t',
                      {':s':'analyzing',':t':transcript_key})
-        analysis = provider.analyze_transcript(transcript)
+        profile = load_profile(owner)
+        today = datetime.now(timezone.utc).date()
+        context = user_profile.prompt_context(
+            profile, today, user_profile.nudge_allowed(profile, upload_id, today))
+        raw = provider.analyze_transcript(transcript, context)
+        analysis, extras = provider.split_analysis(raw)
+        recommendation = user_profile.choose_recommendation(
+            extras['recommendation'], analysis['sentiment'], context, today, profile)
+        if recommendation:
+            analysis['suggestion'] = recommendation['text']
+            analysis['suggestion_reason'] = recommendation['reason']
+        # Learn while still holding the lease, so account deletion (which waits
+        # for active leases) cannot race a profile write. Never fail the journal.
+        try:
+            learn_from_journal(owner, upload_id, extras['signals'], profile, today,
+                               transcript=transcript, themes=analysis.get('themes', []),
+                               recommendation=recommendation)
+        except Exception as exc:
+            LOG.warning('Profile learning skipped for %s (%s)', upload_id, type(exc).__name__)
         update_owned(upload_id,token,'#s=:s, analysis=:a',
                      {':s':'completed',':a':analysis},'leaseToken, leaseExpiresAt, #e')
         LOG.info('Completed upload %s',upload_id)

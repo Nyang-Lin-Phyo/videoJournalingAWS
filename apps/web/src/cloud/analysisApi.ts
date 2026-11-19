@@ -4,6 +4,10 @@ export type Analysis = {
   emotions: string[];
   themes: string[];
   summary: string;
+  /** One small, verified recommendation built from the user's favourites. */
+  suggestion?: string;
+  /** Why it was offered: a heavier entry, today's situation, or a while since. */
+  suggestion_reason?: "comfort" | "context_match" | "been_a_while";
 };
 
 export type AnalysisResult = {
@@ -103,6 +107,58 @@ export async function buyStreakFreeze(token: string): Promise<StreakSummary> {
     throw new Error(message);
   }
   return parseStreakSummary(await response.json());
+}
+
+/** Stated preferences only; the server never returns anything it has learned. */
+export type UserProfile = {
+  onboarding_completed: boolean;
+  interests: string[];
+  music: string[];
+  mood_boosters: string[];
+  comfort_foods: string[];
+  music_note: string;
+};
+export type ProfileUpdate = Omit<UserProfile, "onboarding_completed"> & {
+  complete_onboarding?: boolean;
+};
+
+function parseProfile(value: unknown): UserProfile {
+  const data = value as Partial<UserProfile> | null;
+  const list = (item: unknown) => Array.isArray(item) && item.every(entry => typeof entry === "string");
+  if (!data || typeof data !== "object" || typeof data.onboarding_completed !== "boolean" ||
+      !list(data.interests) || !list(data.music) || !list(data.mood_boosters) ||
+      (data.comfort_foods !== undefined && !list(data.comfort_foods)) ||
+      typeof data.music_note !== "string") {
+    throw new Error("Invalid profile response.");
+  }
+  // Tolerate an API deployed before comfort foods existed.
+  return { ...data, comfort_foods: data.comfort_foods ?? [] } as UserProfile;
+}
+
+export async function fetchProfile(token: string, signal?: AbortSignal): Promise<UserProfile> {
+  const response = await fetch(`${base()}/profile`, {
+    headers: headers(token), cache: "no-store", signal,
+  });
+  if (!response.ok) throw new Error(`Unable to load your interests (HTTP ${response.status}).`);
+  return parseProfile(await response.json());
+}
+
+export async function saveProfile(token: string, update: ProfileUpdate): Promise<UserProfile> {
+  const response = await fetch(`${base()}/profile`, {
+    method: "PUT",
+    headers: headers(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(update),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    let message = `Unable to save your interests (HTTP ${response.status}).`;
+    try {
+      const payload = await response.json() as { error?: string };
+      if (payload.error) message = payload.error;
+    } catch { /* keep the status code */ }
+    throw new Error(message);
+  }
+  return parseProfile(await response.json());
 }
 
 export type AccountDeletionProgress = {

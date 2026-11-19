@@ -145,3 +145,6 @@ infra/.auth-api.env
 # Generated v5 deployment backups, policies and temporary builds
 infra/phase5-generated/
 reverie-history-v5.zip
+
+# Issue #7 profile deploy output (env snapshots, backups)
+infra/profile-generated/

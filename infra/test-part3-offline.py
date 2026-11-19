@@ -69,7 +69,7 @@ def test_sqs_worker():
     worker.s3.head_object.return_value={'ContentLength':16,'ContentType':'video/mp4'}
     transcribed=[]
     worker.provider.transcribe_mp4=lambda v:(transcribed.append(v) or 'Today I am happy.')
-    worker.provider.analyze_transcript=lambda t:{'sentiment':'positive','emotions':['joy'],'themes':['day'],'summary':'happy'}
+    worker.provider.analyze_transcript=lambda t,ctx=None:{'sentiment':'positive','emotions':['joy'],'themes':['day'],'summary':'happy','profile_signals':[],'suggestion':''}
     body={'Records':[{'eventSource':'aws:s3','eventTime':'2026-11-16T17:00:00Z',
                       's3':{'bucket':{'name':'example-bucket'},'object':{'key':key}}}]}
     sqs={'Records':[{'eventSource':'aws:sqs','messageId':'m1','body':json.dumps(body)}]}
