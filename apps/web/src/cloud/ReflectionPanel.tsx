@@ -1,25 +1,40 @@
+import { useEffect } from "react";
 import type { Analysis } from "./analysisApi";
 import { Icon } from "../components/Icon";
+import { RECOMMENDATION_HEADINGS, useBuddyChannel } from "../components/mascot/buddyChannel";
 import "./onboarding.css";
 
-const SUGGESTION_HEADINGS = {
-  comfort: "A gentle thought",
-  context_match: "A little idea for today",
-  been_a_while: "Something you might be missing",
-} as const;
-
 export function ReflectionPanel({ reflection }: { reflection: Analysis }) {
+  const buddy = useBuddyChannel();
+  const suggestion = reflection.suggestion?.trim();
+  const reason = reflection.suggestion_reason ?? "comfort";
+
+  // Biscuit delivers the recommendation whenever a reflection carrying one appears:
+  // right after an upload finishes, or when an entry is opened from history.
+  useEffect(() => {
+    if (buddy && suggestion) buddy.recommend({ text: suggestion, reason });
+  }, [buddy, suggestion, reason]);
+
   return (
     <section className="panel analysis-panel" aria-labelledby="reflection-heading">
       <div className="section-label"><Icon name="spark" /> A MOMENT OF PERSPECTIVE</div>
       <h2 id="reflection-heading">Your reflection</h2>
       <div className="summary"><p>{reflection.summary}</p></div>
-      {reflection.suggestion?.trim() && (
+      {suggestion && buddy && (
+        <div className="buddy-handoff">
+          <Icon name="heart" size={16} />
+          <span>Biscuit has {RECOMMENDATION_HEADINGS[reason].toLowerCase()} for you.</span>
+          <button type="button" onClick={() => buddy.recommend({ text: suggestion, reason })}>
+            Hear it again
+          </button>
+        </div>
+      )}
+      {suggestion && !buddy && (
         <aside className="gentle-suggestion" aria-labelledby="gentle-suggestion-heading">
           <Icon name="heart" size={18} />
           <div>
-            <h3 id="gentle-suggestion-heading">{SUGGESTION_HEADINGS[reflection.suggestion_reason ?? "comfort"]}</h3>
-            <p>{reflection.suggestion}</p>
+            <h3 id="gentle-suggestion-heading">{RECOMMENDATION_HEADINGS[reason]}</h3>
+            <p>{suggestion}</p>
           </div>
         </aside>
       )}

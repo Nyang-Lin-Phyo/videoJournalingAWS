@@ -224,6 +224,35 @@
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
+.buddy-handoff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0 0 24px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px dashed rgb(239 156 68 / 70%);
+  background: rgb(239 156 68 / 8%);
+  font-size: 13.5px;
+}
+.buddy-handoff svg {
+  color: var(--orange);
+}
+.buddy-handoff span {
+  flex: 1;
+  min-width: 12em;
+}
+.buddy-handoff button {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--brick);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 @media (max-width: 680px) {
   .onboarding-backdrop {

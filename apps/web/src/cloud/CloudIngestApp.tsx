@@ -6,6 +6,8 @@ import { CloudHistoryPage } from "./CloudHistoryPage";
 import { useCloudEnvironment } from "./CloudEnvironment";
 import { InterestsPage } from "./InterestsPage";
 import { OnboardingFlow } from "./OnboardingFlow";
+import { JournalBuddy } from "../components/mascot/JournalBuddy";
+import { BuddyContext, createBuddyChannel } from "../components/mascot/buddyChannel";
 import type { ProfileUpdate, StreakSummary, UserProfile } from "./analysisApi";
 
 type CloudView = "upload" | "history" | "interests";
@@ -23,6 +25,8 @@ type CloudIngestAppProps = {
 export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: CloudIngestAppProps) {
   const { accessToken, isPreview, services } = useCloudEnvironment();
   const [view, setView] = useState<CloudView>("upload");
+  // Lets reflections hand Gemini's recommendations to Biscuit to deliver.
+  const [buddyChannel] = useState(createBuddyChannel);
   const [refreshKey, setRefreshKey] = useState(0);
   const [uploadRevision, setUploadRevision] = useState(0);
   const [streakRefreshKey, setStreakRefreshKey] = useState(0);
@@ -156,6 +160,7 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
   }
 
   return (
+    <BuddyContext.Provider value={buddyChannel}>
     <div className="app-shell">
       <a href="#main-content" className="skip-link">Skip to content</a>
       <aside className="sidebar">
@@ -326,6 +331,8 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
             />
           )}
         </main>
+        {/* Sits on the footer's top border; sticks to the window bottom until it scrolls into view. */}
+        {!onboardingOpen && <JournalBuddy context={view === "interests" ? undefined : view} />}
         <footer className="footer"><span>Made for the moments in between.</span><span>YOUR WORDS. YOUR PACE.</span></footer>
       </div>
       {onboardingOpen && profile && (
@@ -377,5 +384,6 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
         </div>
       )}
     </div>
+    </BuddyContext.Provider>
   );
 }
