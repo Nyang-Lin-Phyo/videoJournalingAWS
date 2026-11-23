@@ -16,9 +16,11 @@ type Result = {
 
 export function CloudIngestPage({
   onUploaded,
+  onOpenPage,
   active = true,
 }: {
   onUploaded?: () => void;
+  onOpenPage?: (createdAt: string) => void;
   active?: boolean;
 }) {
   const { userSub, accessToken, services } = useCloudEnvironment();
@@ -53,6 +55,7 @@ export function CloudIngestPage({
   const controller = useRef<AbortController | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const previewRef = useRef<string | null>(null);
+
 
   useEffect(() => {
     return () => {
@@ -529,6 +532,7 @@ export function CloudIngestPage({
 
           {active && analysisResult && (
             <>
+              {analysisResult.transcript?.trim() && onOpenPage && <button className="button button-primary" onClick={() => onOpenPage(analysisResult.created_at)}>Customize today’s page</button>}
               <TranscriptPanel key={activeUploadId} transcript={analysisResult.transcript} title={displayTitle}
                 pending={["awaiting_upload", "queued", "transcribing", "analyzing"].includes(analysisResult.status)} />
               {analysisResult.transcript_error && <ErrorNotice message={analysisResult.transcript_error} />}

@@ -74,7 +74,7 @@ python3 - "$GEN" <<'PY'
 from zipfile import ZipFile, ZIP_DEFLATED
 import pathlib,sys
 root=pathlib.Path('infra/lambda'); out=pathlib.Path(sys.argv[1])
-for name,files in {'signer':['auth_signer.py'],'results':['auth_results.py'],
+for name,files in {'signer':['auth_signer.py'],'results':['auth_results.py','journal_pages.py'],
                    'worker':['queue_worker.py','legacy_elevenlabs_provider.py']}.items():
     with ZipFile(out/(name+'.zip'),'w',ZIP_DEFLATED) as z:
         for filename in files:z.write(root/filename, filename)

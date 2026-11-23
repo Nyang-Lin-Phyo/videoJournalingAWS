@@ -52,6 +52,7 @@ output=pathlib.Path(sys.argv[1]); code=pathlib.Path('infra/lambda')
 for key,name in [('signer','auth_signer.py'),('results','auth_results.py')]:
     with zipfile.ZipFile(output/(key+'.zip'),'w',zipfile.ZIP_DEFLATED) as f:
         f.write(code/name,name)
+        if key == 'results': f.write(code/'journal_pages.py','journal_pages.py')
 PY
 aws lambda update-function-code --function-name "$FUNC_NAME" --zip-file "fileb://$GEN/signer.zip" >/dev/null
 aws lambda wait function-updated-v2 --function-name "$FUNC_NAME"
