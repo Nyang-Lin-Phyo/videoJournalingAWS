@@ -57,7 +57,8 @@ print(next(x['Target'] for x in json.load(open(sys.argv[1]))['Items'] if x['Rout
 PY
 )"
 for key in 'POST /journal-exports' 'GET /journal-exports/{job_id}' 'GET /memory-books' 'GET /memory-narratives' 'PUT /memory-books/{book_id}' 'DELETE /memory-books/{book_id}' 'POST /memory-books/{book_id}/memories/{upload_id}/rewrite' 'POST /memory-books/{book_id}/reflections' 'POST /memory-books/{book_id}/exports' 'GET /memory-books/{book_id}/exports' 'GET /memory-books/{book_id}/exports/{revision}' 'POST /memory-books/{book_id}/exports/{revision}/retry' 'POST /memory-photos' 'GET /memory-photos' 'GET /memory-photos/{photo_id}' 'POST /memory-photos/{photo_id}/finalize' 'GET /memory-preferences' 'PUT /memory-preferences' 'GET /journals/{upload_id}/page' 'PUT /journals/{upload_id}/page' 'GET /journal-days/{day}' 'PUT /journal-days/{day}'; do
-  id="$(aws apigatewayv2 get-routes --api-id "$API_ID" --query "Items[?RouteKey=='${key}'].RouteId | [0]" --output text)"
+  id="$(aws apigatewayv2 get-routes --api-id "$API_ID" --output json |
+    python3 -c 'import json,sys; key=sys.argv[1]; routes=json.load(sys.stdin).get("Items", []); print(next((r["RouteId"] for r in routes if r.get("RouteKey")==key), ""))' "$key")"
   if [[ -z "$id" || "$id" == None ]]; then
     aws apigatewayv2 create-route --api-id "$API_ID" --route-key "$key" --target "$TARGET" --authorization-type JWT --authorizer-id "$AUTHORIZER_ID" >/dev/null
   else
