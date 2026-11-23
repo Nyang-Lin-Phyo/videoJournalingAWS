@@ -19,8 +19,8 @@ const BRANCH_OFFSETS = [0.05, 0.24, 1, 0.12, 0.68, 0.06, 0.32, 0.55, 0.14];
 
 const dayKey = localDayKey;
 
-export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
-  active: boolean; refreshKey: number; onDeleted?: () => void;
+export function CloudHistoryPage({ active, refreshKey, onDeleted, onOpenBooks, onEditPage }: {
+  active: boolean; refreshKey: number; onDeleted?: () => void; onOpenBooks?: () => void; onEditPage?: (createdAt: string) => void;
 }) {
   const { userSub, accessToken: token, services } = useCloudEnvironment();
   const { deleteJournal, fetchAnalysis, fetchJournals, fetchJournalMonth, fetchVideoUrl, renameJournal } = services;
@@ -57,6 +57,70 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
   const headerRef = useRef<HTMLDivElement>(null);
   const [jumpTarget, setJumpTarget] = useState<{ kind: "latest" | "day"; day?: string } | null>(null);
   const [emptyMonth, setEmptyMonth] = useState<string | null>(null);
+  const [quickOpen,setQuickOpen]=useState(false);
+  const [quickBusy,setQuickBusy]=useState(false);
+  const [quickError,setQuickError]=useState<string|null>(null);
+  const [quickUrl,setQuickUrl]=useState<string|null>(null);
+  const [quickStart,setQuickStart]=useState(()=>{const date=new Date();return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-01`;});
+  const [quickEnd,setQuickEnd]=useState(()=>{const date=new Date();return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(new Date(date.getFullYear(),date.getMonth()+1,0).getDate()).padStart(2,'0')}`;});
+  const [quickTemplate,setQuickTemplate]=useState('Minimalist');
+  const quickAttempt = useRef<AbortController | null>(null);
+  const quickRequestKey=useRef<string|null>(null);
+
+  function closeQuickExport() {
+    quickAttempt.current?.abort();
+    quickAttempt.current = null;
+    setQuickBusy(false);
+    setQuickOpen(false);
+  }
+
+  async function exportQuick() {
+    if (quickAttempt.current) return;
+    if (!quickStart || !quickEnd || quickStart > quickEnd) {
+      setQuickError('Choose a valid start and end date.');
+      return;
+    }
+    const attempt = new AbortController();
+    quickAttempt.current = attempt;
+    const { signal } = attempt;
+    setQuickBusy(true);
+    setQuickError(null);
+    setQuickUrl(null);
+    try {
+      const key=quickRequestKey.current ?? (quickRequestKey.current=crypto.randomUUID());
+      const job = await services.startQuickExport(token, {
+        start_date: quickStart,
+        end_date: quickEnd,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        template: quickTemplate,
+        request_key: key,
+      }, signal);
+      for (let poll = 0; poll < 180 && !signal.aborted; poll++) {
+        const status = await services.fetchQuickExport(token, job.job_id, signal);
+        if (signal.aborted) return;
+        if (status.status === 'complete' && status.download_url) {
+          setQuickUrl(status.download_url);
+          return;
+        }
+        if (status.status === 'failed') {
+          throw new Error('The PDF could not be prepared. You can retry with the same settings.');
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 2000));
+      }
+      if (!signal.aborted) throw new Error('PDF preparation is taking longer than expected. Retry with the same settings.');
+    } catch (error) {
+      if (!signal.aborted) setQuickError(error instanceof Error ? error.message : 'Unable to prepare PDF.');
+    } finally {
+      if (quickAttempt.current === attempt) {
+        quickAttempt.current = null;
+        setQuickBusy(false);
+      }
+    }
+  }
+  useEffect(() => () => quickAttempt.current?.abort(), []);
+  useEffect(() => {
+    if (!active && quickOpen) closeQuickExport();
+  }, [active, quickOpen]);
 
   useEffect(() => () => {
     request.current?.abort();
@@ -271,7 +335,7 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
           details.current.set(id, info);
           setVersion(n => n + 1);
         }
-        if (!videos.current.has(id) && journal.status !== "awaiting_upload") {
+        if (journal.source_type !== "text" && !videos.current.has(id) && journal.status !== "awaiting_upload") {
           const signed = await fetchVideoUrl(id, token, controller.signal);
           if (controller.signal.aborted) return;
           // The browser loads only the data it needs through HTTP Range GETs.
@@ -502,9 +566,10 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
         )}
         {detail?.analysis && <ReflectionPanel reflection={detail.analysis}/>}
         {detail?.status === "failed" && <p className="muted">This reflection could not be completed.</p>}
-        {detail && !detail.analysis && detail.status !== "failed" &&
+        {detail && !detail.analysis && detail.status !== "failed" && detail.status !== "completed" &&
           <p className="muted">Your reflection is still being prepared.</p>}
         <div className="history-actions">
+          {(journal.page_available || journal.status === "completed") && onEditPage && <button type="button" className="button button-primary" onClick={() => onEditPage(journal.created_at)}>Edit day</button>}
           {editingId === id ? (
             <form onSubmit={event => { event.preventDefault(); void saveTitle(journal); }} className="history-edit-form">
               <label htmlFor={`rename-${id}`}>Edit title</label>
@@ -547,7 +612,25 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted }: {
             Calendar
           </button>
         </div>
+        <div className="history-export-actions">
+          <button type="button" className="button button-primary" onClick={()=>{setQuickOpen(true);setQuickError(null);setQuickUrl(null);}}>Export PDF</button>
+          <button type="button" className="button button-secondary" onClick={onOpenBooks}>Open Memory Books</button>
+        </div>
       </div>
+      {quickOpen && <div className="account-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeQuickExport(); }}>
+        <section className="account-dialog quick-export-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-export-title" onKeyDown={event => { if (event.key === 'Escape') closeQuickExport(); }}>
+          <button type="button" className="quick-export-close" aria-label="Close export dialog" onClick={closeQuickExport}>×</button>
+          <h2 id="quick-export-title">Export your journals</h2>
+          <p>Choose a date range and a page style. Your original transcripts will be kept as written.</p>
+          <label>Start date<input autoFocus type="date" value={quickStart} onChange={e=>{quickRequestKey.current=null;setQuickStart(e.target.value);setQuickUrl(null);setQuickError(null);}} disabled={quickBusy}/></label>
+          <label>End date<input type="date" value={quickEnd} onChange={e=>{quickRequestKey.current=null;setQuickEnd(e.target.value);setQuickUrl(null);setQuickError(null);}} disabled={quickBusy}/></label>
+          <label>Template<select value={quickTemplate} onChange={e=>{quickRequestKey.current=null;setQuickTemplate(e.target.value);setQuickUrl(null);setQuickError(null);}} disabled={quickBusy}>{['Minimalist','Vintage','Scrapbook','Classic diary','Editorial'].map(name=><option key={name}>{name}</option>)}</select></label>
+          {quickBusy&&<p role="status" aria-live="polite">Preparing PDF…</p>}
+          {quickError&&<p role="alert" className="quick-export-error">{quickError}</p>}
+          {quickUrl&&<p role="status">Your PDF is ready.</p>}
+          <div className="account-dialog-actions">{quickUrl?<a className="button button-primary" href={quickUrl} target="_blank" rel="noreferrer">Download PDF</a>:<button type="button" className="button button-primary" onClick={()=>void exportQuick()} disabled={quickBusy}>{quickBusy?'Preparing PDF…':quickError?'Retry PDF export':'Export PDF'}</button>}<button type="button" className="button button-secondary" onClick={closeQuickExport}>Close</button></div>
+        </section>
+      </div>}
       {mode === "calendar" && <CalendarOverview
         initialMonth={calendarMonth}
         visibleMonth={calendarMonth}

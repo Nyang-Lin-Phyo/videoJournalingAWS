@@ -2265,3 +2265,37 @@ a svg {
 .about-panel {
   border-left: 4px solid var(--orange);
 }
+
+/* Notebook book template */
+.template-notebook-v1.memory-page { box-sizing:border-box; width:min(100%,595px); min-height:0; aspect-ratio:210/297; }
+.template-notebook-v1 .date-area { margin-bottom:0; color:#8a776b; text-transform:none; letter-spacing:.04em; }
+.template-notebook-v1 .title-area { border:0; padding:0; margin-bottom:2px; color:#59483d; font-size:1.7em; }
+.template-notebook-v1 .story-area { flex:0 0 auto; line-height:1.5; font-size:12.5px; }
+.template-notebook-v1 .story-area p { margin:.35em 0; }
+.template-notebook-v1 .image-area { flex:0 0 auto; background:#fffefa; border-color:#e6ded5; }
+.template-notebook-v1 .image-area.is-reserved { display:none; }
+.template-notebook-v1 .writing-area { flex:1 0 58px; min-height:55px; margin-top:4px; background-color:transparent; }
+.template-notebook-v1 .writing-area.is-reserved { min-height:0; border:0; padding:0 0 0 28px; background-color:transparent!important; background-image:linear-gradient(to right,transparent 22px,#e4cdc4 22px,#e4cdc4 23px,transparent 23px),repeating-linear-gradient(to bottom,transparent 0,transparent 18px,#e9e2d8 19px,#e9e2d8 20px); }
+.template-notebook-v1 .notebook-user-writing { flex:0 0 auto; min-height:0; border:0; padding:2px 0; background:transparent; white-space:pre-wrap; overflow-wrap:anywhere; }
+.template-notebook-v1 .notebook-remaining-space { flex:1 0 58px; margin:0; }
+.template-notebook-v1 .notebook-stickers { display:flex; flex:0 0 auto; align-items:center; gap:8px; min-height:28px; margin:0; }
+.notebook-sticker { display:inline-grid; place-items:center; width:24px; height:24px; color:#a4775f; font:20px/1 Georgia,serif; }
+.notebook-sticker svg { width:22px; height:22px; fill:none; stroke:#a4775f; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.notebook-stickers .personal-sticker { width:30px; height:30px; object-fit:contain; }
+.notebook-annotation { flex:0 0 auto; margin:2px 0; padding:5px 8px; background:#fffefa; font-style:italic; }
+.notebook-marginal-quote { min-height:0!important; margin:2px 0; padding:2px 7px; border-left:1px solid #b98b72; color:#766a64; font-size:.86em; }
+.memory-sticker-controls { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0; padding:14px; border:1px solid #eadfd4; border-radius:9px; background:#fcf8f1; }
+.memory-sticker-controls h3 { grid-column:1/-1; margin:0; font:600 17px Georgia,serif; }
+.memory-sticker-controls label { display:flex; flex-direction:column; gap:7px; font-weight:600; font-size:.88rem; }
+.memory-sticker-controls select { border:1px solid #d9c3b5; border-radius:7px; padding:9px; color:#43332e; background:#fffefa; font:inherit; }
+.memory-sticker-controls input[type=file] { display:none; }
+.memory-sticker-options { display:flex; flex-wrap:wrap; gap:6px; }
+.memory-sticker-options button { border:1px solid #d9c3b5; border-radius:999px; padding:7px 11px; background:#fffefa; color:#51413a; font:inherit; cursor:pointer; }
+.memory-sticker-options button[aria-pressed=true] { border-color:#ad7562; background:#f4e8dc; }
+.memory-personal-sticker-choice { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.notebook-continuation-hint { width:min(100%,595px); margin:-10px auto 18px; color:#8a5b48; font-size:.85rem; }
+.memory-delete-backdrop { position:fixed; inset:0; z-index:1000; display:grid; place-items:center; padding:20px; background:rgba(37,30,27,.42); }
+.memory-delete-dialog { width:min(100%,520px); padding:24px; border:1px solid #ded6cb; border-radius:14px; background:#fffefa; box-shadow:0 18px 60px rgba(37,30,27,.24); color:#43332e; }
+.memory-delete-dialog h2 { margin:0 0 12px; }
+.memory-delete-dialog p { line-height:1.55; }
+.memory-delete-error { color:#9b3025; }

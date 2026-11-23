@@ -3,18 +3,22 @@ import "./cloud.css";
 import { Icon } from "../components/Icon";
 import { CloudIngestPage } from "./CloudIngestPage";
 import { CloudHistoryPage } from "./CloudHistoryPage";
+import { MemoryBooksPage } from "./MemoryBooksPage";
 import { useCloudEnvironment } from "./CloudEnvironment";
 import { InterestsPage } from "./InterestsPage";
 import { OnboardingFlow } from "./OnboardingFlow";
 import { JournalBuddy } from "../components/mascot/JournalBuddy";
+import { JournalPageEditor } from "./JournalPageEditor";
 import { BuddyContext, createBuddyChannel } from "../components/mascot/buddyChannel";
 import type { ProfileUpdate, StreakSummary, UserProfile } from "./analysisApi";
 
-type CloudView = "upload" | "history" | "interests";
+type CloudView = "upload" | "history" | "books" | "interests" | "page";
 const VIEW_TITLES: Record<CloudView, string> = {
   upload: "Upload a video",
   history: "Journal history",
+  books: "Memory books",
   interests: "Your interests",
+  page: "Edit journal page",
 };
 type CloudIngestAppProps = {
   accountEmail?: string;
@@ -22,9 +26,16 @@ type CloudIngestAppProps = {
   onAccountDeleted?: () => Promise<void>;
 };
 
+function localDayKey(instant: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(instant));
+  const part = (type: string) => parts.find(value => value.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
 export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: CloudIngestAppProps) {
   const { accessToken, isPreview, services } = useCloudEnvironment();
   const [view, setView] = useState<CloudView>("upload");
+  const [pageDayKey, setPageDayKey] = useState("");
   // Lets reflections hand Gemini's recommendations to Biscuit to deliver.
   const [buddyChannel] = useState(createBuddyChannel);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -177,6 +188,9 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
           <button type="button" className={`nav-link ${view === "history" ? "active" : ""}`} onClick={() => setView("history")}>
             <Icon name="book" /> Journal history {view === "history" && <span className="nav-dot" />}
           </button>
+          <button type="button" className={`nav-link ${view === "books" ? "active" : ""}`} onClick={() => setView("books")}>
+            <Icon name="book" /> Memory books {view === "books" && <span className="nav-dot" />}
+          </button>
           <button type="button" className={`nav-link ${view === "interests" ? "active" : ""}`} onClick={() => setView("interests")}>
             <Icon name="heart" /> Your interests {view === "interests" && <span className="nav-dot" />}
           </button>
@@ -314,11 +328,13 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
                 setRefreshKey(value => value + 1);
                 setStreakRefreshKey(value => value + 1);
               }}
+              onOpenPage={createdAt => { setPageDayKey(localDayKey(createdAt, timezone)); setView("page"); }}
             />
           </div>
           <div style={{ display: view === "history" ? "block" : "none" }}>
-            <CloudHistoryPage active={view === "history"} refreshKey={refreshKey} onDeleted={() => { setUploadRevision(n => n + 1); setRefreshKey(n => n + 1); }} />
+            <CloudHistoryPage active={view === "history"} refreshKey={refreshKey} onOpenBooks={()=>setView("books")} onEditPage={createdAt => { setPageDayKey(localDayKey(createdAt, timezone)); setView("page"); }} onDeleted={() => { setUploadRevision(n => n + 1); setRefreshKey(n => n + 1); }} />
           </div>
+          {view === "page" && <JournalPageEditor key={pageDayKey} dayKey={pageDayKey} timezone={timezone} onBack={() => setView("history")} />}
           {view === "interests" && (
             <InterestsPage
               profile={profile}
@@ -330,9 +346,10 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
               onSave={saveProfile}
             />
           )}
+          {view === "books" && <MemoryBooksPage />}
         </main>
         {/* Sits on the footer's top border; sticks to the window bottom until it scrolls into view. */}
-        {!onboardingOpen && <JournalBuddy context={view === "interests" ? undefined : view} />}
+        {!onboardingOpen && <JournalBuddy context={view === "upload" || view === "history" ? view : undefined} />}
         <footer className="footer"><span>Made for the moments in between.</span><span>YOUR WORDS. YOUR PACE.</span></footer>
       </div>
       {onboardingOpen && profile && (

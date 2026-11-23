@@ -191,7 +191,8 @@ def run():
         assert upload_id not in table.rows
         assert not cognito.deleted
 
-        for _ in range(5):
+        # Memory book and private export cleanup added two owner-scoped phases.
+        for _ in range(10):
             response = results.handler(event(), None)
             if response['statusCode'] == 204:
                 break

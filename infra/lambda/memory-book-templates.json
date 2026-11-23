@@ -1,0 +1,250 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "daily-notes-v1",
+      "templateVersion": 1,
+      "name": "Daily Notes",
+      "identity": "Quiet, spacious pages for everyday moments.",
+      "dailyPrint": { "accent": "#8c675c", "noteBackground": "#f7f1ed", "noteBorder": "#8c675c", "photoBorder": "#d8cfc5", "treatment": "daily-notes" },
+      "legacyTheme": "Classic diary",
+      "page": {
+        "widthMm": 210,
+        "heightMm": 297,
+        "marginMm": 18
+      },
+      "slots": [
+        {
+          "id": "date",
+          "kind": "date"
+        },
+        {
+          "id": "title",
+          "kind": "title"
+        },
+        {
+          "id": "image",
+          "kind": "image-or-text",
+          "heightMm": 66,
+          "imageTreatment": "frame"
+        },
+        {
+          "id": "story",
+          "kind": "narrative"
+        },
+        {
+          "id": "quote",
+          "kind": "quote",
+          "minHeightMm": 22,
+          "guide": "ruled"
+        },
+        {
+          "id": "writing",
+          "kind": "writing",
+          "heightMm": 40,
+          "guide": "ruled"
+        }
+      ]
+    },
+    {
+      "id": "field-journal-v1",
+      "templateVersion": 1,
+      "name": "Field Journal",
+      "identity": "A dated field page with a framed image and dot-grid space for notes or sketches.",
+      "dailyPrint": { "accent": "#9c774f", "noteBackground": "#f4f0e7", "noteBorder": "#9c774f", "photoBorder": "#9c774f", "treatment": "field-journal" },
+      "legacyTheme": "Vintage",
+      "page": {
+        "widthMm": 210,
+        "heightMm": 297,
+        "marginMm": 16
+      },
+      "slots": [
+        {
+          "id": "date",
+          "kind": "date"
+        },
+        {
+          "id": "title",
+          "kind": "title"
+        },
+        {
+          "id": "story",
+          "kind": "narrative"
+        },
+        {
+          "id": "image",
+          "kind": "image-or-text",
+          "heightMm": 58,
+          "imageTreatment": "frame"
+        },
+        {
+          "id": "quote",
+          "kind": "quote",
+          "minHeightMm": 28,
+          "guide": "dot"
+        },
+        {
+          "id": "writing",
+          "kind": "writing",
+          "heightMm": 48,
+          "guide": "dot"
+        }
+      ]
+    },
+    {
+      "id": "photo-album-v1",
+      "templateVersion": 1,
+      "name": "Photo Album",
+      "identity": "A generous, cleanly mounted image space followed by the story it holds.",
+      "dailyPrint": { "accent": "#a36d60", "noteBackground": "#faf2ed", "noteBorder": "#a36d60", "photoBorder": "#a36d60", "treatment": "photo-album" },
+      "legacyTheme": "Scrapbook",
+      "page": {
+        "widthMm": 210,
+        "heightMm": 297,
+        "marginMm": 15
+      },
+      "slots": [
+        {
+          "id": "date",
+          "kind": "date"
+        },
+        {
+          "id": "title",
+          "kind": "title"
+        },
+        {
+          "id": "image",
+          "kind": "image-or-text",
+          "heightMm": 86,
+          "imageTreatment": "mount"
+        },
+        {
+          "id": "quote",
+          "kind": "quote",
+          "minHeightMm": 24,
+          "guide": "open"
+        },
+        {
+          "id": "story",
+          "kind": "narrative"
+        },
+        {
+          "id": "writing",
+          "kind": "writing",
+          "heightMm": 34,
+          "guide": "open"
+        }
+      ]
+    },
+    {
+      "id": "story-letter-v1",
+      "templateVersion": 1,
+      "name": "Story Letter",
+      "identity": "A letter-style memory with a tidy ruled quote block and handwriting space.",
+      "dailyPrint": { "accent": "#79645f", "noteBackground": "#f2efed", "noteBorder": "#79645f", "photoBorder": "#d7d0cd", "treatment": "story-letter" },
+      "legacyTheme": "Editorial",
+      "page": {
+        "widthMm": 210,
+        "heightMm": 297,
+        "marginMm": 22
+      },
+      "slots": [
+        {
+          "id": "date",
+          "kind": "date"
+        },
+        {
+          "id": "title",
+          "kind": "title"
+        },
+        {
+          "id": "quote",
+          "kind": "quote",
+          "minHeightMm": 36,
+          "guide": "ruled"
+        },
+        {
+          "id": "story",
+          "kind": "narrative"
+        },
+        {
+          "id": "image",
+          "kind": "image-or-text",
+          "heightMm": 54,
+          "imageTreatment": "frame"
+        },
+        {
+          "id": "writing",
+          "kind": "writing",
+          "heightMm": 52,
+          "guide": "ruled"
+        }
+      ]
+    },
+    {
+      "id": "minimal-record-v1",
+      "templateVersion": 1,
+      "name": "Minimal Record",
+      "identity": "A crisp record page with a small image and open space for later notes.",
+      "dailyPrint": { "accent": "#6f8076", "noteBackground": "#eef2ef", "noteBorder": "#6f8076", "photoBorder": "#d5ddd7", "treatment": "minimal-record" },
+      "legacyTheme": "Minimalist",
+      "page": {
+        "widthMm": 210,
+        "heightMm": 297,
+        "marginMm": 20
+      },
+      "slots": [
+        {
+          "id": "date",
+          "kind": "date"
+        },
+        {
+          "id": "title",
+          "kind": "title"
+        },
+        {
+          "id": "story",
+          "kind": "narrative"
+        },
+        {
+          "id": "quote",
+          "kind": "quote",
+          "minHeightMm": 20,
+          "guide": "open"
+        },
+        {
+          "id": "writing",
+          "kind": "writing",
+          "heightMm": 44,
+          "guide": "open"
+        },
+        {
+          "id": "image",
+          "kind": "image-or-text",
+          "heightMm": 50,
+          "imageTreatment": "open"
+        }
+      ]
+    },
+    {
+      "id": "notebook-v1",
+      "templateVersion": 1,
+      "name": "Notebook",
+      "identity": "A warm, ruled journal page with room to keep writing or sketching.",
+      "dailyPrint": { "accent": "#9f7564", "noteBackground": "#f7f1ed", "noteBorder": "#9f7564", "photoBorder": "#e6ded5", "treatment": "notebook" },
+      "legacyTheme": "Notebook",
+      "page": { "widthMm": 210, "heightMm": 297, "marginMm": 18 },
+      "stickers": ["sunrise", "leaf", "spark", "heart", "flower"],
+      "slots": [
+        { "id": "date", "kind": "date" },
+        { "id": "title", "kind": "title" },
+        { "id": "image", "kind": "image-or-text", "heightMm": 58, "imageTreatment": "open" },
+        { "id": "story", "kind": "narrative" },
+        { "id": "quote", "kind": "quote", "minHeightMm": 18, "guide": "open" },
+        { "id": "annotation", "kind": "annotation" },
+        { "id": "stickers", "kind": "stickers" },
+        { "id": "writing", "kind": "writing", "heightMm": 58, "guide": "ruled" }
+      ]
+    }
+  ]
+}

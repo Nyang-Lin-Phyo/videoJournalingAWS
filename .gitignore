@@ -148,3 +148,7 @@ reverie-history-v5.zip
 
 # Issue #7 profile deploy output (env snapshots, backups)
 infra/profile-generated/
+
+# Memory Books deployment output (environment snapshots and Lambda packages)
+infra/memory-books-generated/
+infra/memory-renderer-generated/

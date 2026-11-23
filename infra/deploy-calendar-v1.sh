@@ -26,11 +26,11 @@ if [[ "$(aws dynamodb describe-table --table-name "$JOURNAL_TABLE" --query 'Tabl
   echo 'Required existing DynamoDB GSI is not ACTIVE.' >&2
   exit 1
 fi
-for file in infra/lambda/auth_results.py infra/lambda/user_profile.py; do
+for file in infra/lambda/auth_results.py infra/lambda/user_profile.py infra/lambda/journal_pages.py; do
   [[ -f "$file" ]] || { echo "Missing $file" >&2; exit 1; }
 done
 
-python3 -m py_compile infra/lambda/auth_results.py infra/lambda/user_profile.py
+python3 -m py_compile infra/lambda/auth_results.py infra/lambda/user_profile.py infra/lambda/journal_pages.py
 python3 infra/test-calendar-month.py
 
 OUTPUT=infra/calendar-generated
@@ -41,7 +41,7 @@ curl -fsSL "$url" -o "$OUTPUT/results-before.zip"
 python3 - "$OUTPUT/results-calendar.zip" <<'PY'
 import sys, zipfile
 with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as archive:
-    for name in ('auth_results.py', 'user_profile.py'):
+    for name in ('auth_results.py', 'user_profile.py', 'journal_pages.py'):
         archive.write('infra/lambda/' + name, name)
 PY
 aws lambda update-function-code --function-name "$RESULT_FUNC" --zip-file "fileb://$OUTPUT/results-calendar.zip" >/dev/null

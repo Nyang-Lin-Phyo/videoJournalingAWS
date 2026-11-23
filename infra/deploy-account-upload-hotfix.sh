@@ -76,6 +76,8 @@ out = Path(sys.argv[1])
 for label, module in [('signer', 'auth_signer.py'), ('results', 'auth_results.py')]:
     with ZipFile(out / f'{label}.zip', 'w', ZIP_DEFLATED) as archive:
         archive.write(Path('infra/lambda') / module, module)
+        if label == 'results':
+            archive.write(Path('infra/lambda/journal_pages.py'), 'journal_pages.py')
 PY
 
 printf '[4/4] Update Lambda code without touching environment, routes, SQS or S3\n'

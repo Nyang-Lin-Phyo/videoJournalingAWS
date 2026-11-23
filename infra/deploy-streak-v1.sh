@@ -81,7 +81,7 @@ source = pathlib.Path('infra/lambda')
 packages = {
     'signer': ['auth_signer.py'],
     'worker': ['queue_worker.py', 'legacy_elevenlabs_provider.py'],
-    'results': ['auth_results.py'],
+    'results': ['auth_results.py', 'journal_pages.py'],
 }
 for name, files in packages.items():
     with zipfile.ZipFile(output / f'{name}.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
