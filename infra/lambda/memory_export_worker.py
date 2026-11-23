@@ -721,7 +721,12 @@ def render_journal_pages_html(book, pages, image_urls):
             day_lookup[day_key] = {'date': display_date, 'records': [], 'highlight': False}
             grouped_days.append(day_lookup[day_key])
         day_group = day_lookup[day_key]
-        day_group['records'].append(f'<div class="journal-page-blocks">{"".join(block_html)}</div>')
+        day_group['records'].append(
+            f'<div class="journal-day-record">'
+            f'<h2>{title}</h2>'
+            f'<div class="journal-page-blocks">{"".join(block_html)}</div>'
+            f'</div>'
+        )
         day_group['highlight'] = day_group['highlight'] or (include_highlights and page.get('highlightPage') is True)
     sections = []
     for day_index, day_group in enumerate(grouped_days):

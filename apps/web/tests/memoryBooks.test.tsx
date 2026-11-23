@@ -137,54 +137,79 @@ describe("quick journal PDF export", () => {
 });
 
 describe("journal pages", () => {
-  it("uploads UTF-8 text and opens its editable page directly", async () => {
+  async function openWalkDay() {
+    fireEvent.click(screen.getByRole("button", { name: "Journal history" }));
+    fireEvent.click(await screen.findByRole("button", { name: /A walk after class/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit day" }));
+    return await screen.findByRole("article", { name: "Journal page design canvas" });
+  }
+
+  it("opens a video's daily page and keeps its original transcript locked", async () => {
     render(<CloudPreviewApp onboarded />);
-    fireEvent.change(screen.getByLabelText("Choose .txt file"), {
-      target: { files: [new File(["First paragraph.\n\nSecond paragraph."], "notes.txt", { type: "text/plain" })] },
-    });
-    fireEvent.click(await screen.findByRole("button", { name: "Save and arrange page" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit page" }));
-    expect(await screen.findByRole("textbox", { name: "Paragraph 1" })).toHaveValue("First paragraph.");
-    expect(screen.getByRole("textbox", { name: "Paragraph 2" })).toHaveValue("Second paragraph.");
-    fireEvent.click(screen.getByText("View original source"));
-    expect(document.querySelector(".journal-source pre")).toHaveTextContent("First paragraph. Second paragraph.");
+    const canvas = await openWalkDay();
+
+    expect(within(canvas).getByRole("group", { name: "Original transcript box 1" })).toBeVisible();
+    expect(within(canvas).getByText("Transcript locked")).toBeVisible();
+    expect(within(canvas).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText(/1 recording combined/)).toBeVisible();
+
+    fireEvent.click(screen.getByText("View original transcript"));
+    expect(document.querySelector(".journal-source pre")).toHaveTextContent("[DEMO TRANSCRIPT]");
+    expect(document.querySelector(".journal-source pre")).toHaveTextContent("I took a walk after class");
   });
 
-  it("opens a source page, marks a sentence, resizes and reorders paragraphs, then saves a revision", async () => {
+  it("adds and rearranges personal text, saves a daily revision and reopens it", async () => {
     render(<CloudPreviewApp onboarded />);
-    fireEvent.click(screen.getByRole("button", { name: "Journal history" }));
-    fireEvent.click(await screen.findByText("A walk after class"));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit page" }));
+    const canvas = await openWalkDay();
 
-    await screen.findByRole("textbox", { name: "Paragraph 1" });
-    fireEvent.click(screen.getByRole("button", { name: "+ Add paragraph" }));
-    const paragraphs = screen.getAllByRole("textbox", { name: /^Paragraph / });
-    expect(paragraphs).toHaveLength(2);
-    const first = paragraphs[0] as HTMLTextAreaElement;
-    first.focus();
-    first.setSelectionRange(0, Math.min(8, first.value.length));
-    fireEvent.select(first);
-    fireEvent.click(within(first.closest(".journal-page-block") as HTMLElement).getByRole("button", { name: "Mark selected sentence" }));
-    expect(screen.getByText("Highlighted:").parentElement).toHaveTextContent(first.value.slice(0, 8));
-    fireEvent.change(screen.getAllByRole("combobox", { name: "Paragraph width" })[0]!, { target: { value: "half" } });
-    fireEvent.click(screen.getByRole("button", { name: "Move paragraph 2 up" }));
-    fireEvent.change(screen.getByLabelText("Add a private photo"), { target: { files: [new File(["image"], "memory.png", { type: "image/png" })] } });
-    expect(await screen.findByAltText("Private journal photo")).toBeVisible();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Highlight photo" }));
+    fireEvent.click(within(canvas).getByRole("button", { name: "+ Add text" }));
+    const note = within(canvas).getByRole("textbox", { name: "Added text 2" }) as HTMLTextAreaElement;
+    fireEvent.change(note, { target: { value: "A small thought to remember." } });
+    fireEvent.focus(note);
+    fireEvent.click(within(canvas).getByRole("button", { name: "More options" }));
+    fireEvent.change(within(canvas).getByRole("slider", { name: "Text box width" }), { target: { value: "60" } });
+    fireEvent.change(within(canvas).getByRole("combobox", { name: "Paragraph style" }), { target: { value: "note" } });
+    fireEvent.click(within(canvas).getByRole("button", { name: "Move earlier" }));
     fireEvent.click(screen.getByRole("button", { name: "Save page" }));
+
     expect(await screen.findByText("Page saved.")).toBeVisible();
     expect(screen.getByText(/REVISION 1/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "← Journal history" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit day" }));
+    const reopened = await screen.findByRole("article", { name: "Journal page design canvas" });
+    const savedNote = within(reopened).getByRole("textbox", { name: /Added text/ }) as HTMLTextAreaElement;
+    expect(savedNote).toHaveValue("A small thought to remember.");
+    expect(savedNote.closest(".journal-design-block")).toHaveClass("is-note");
+    expect(savedNote.closest(".journal-design-block")).toHaveStyle({ width: "60%" });
+    expect(within(reopened).getByText("Transcript locked")).toBeVisible();
   });
 
-  it("saves an ordered page collection before confirming a preview export", async () => {
+  it("creates a date-range collection, excludes a day, previews and requests a PDF", async () => {
     render(<CloudPreviewApp onboarded />);
     fireEvent.click(screen.getByRole("button", { name: "Memory books" }));
     fireEvent.click(screen.getByRole("button", { name: "Create a book" }));
-    const pageOption = await screen.findByRole("option", { name: /A walk after class/ }) as HTMLOptionElement;
-    fireEvent.change(screen.getByRole("combobox", { name: "Add a saved page" }), { target: { value: pageOption.value } });
-    expect(await screen.findByText("A walk after class")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-24" } });
+    fireEvent.change(screen.getByLabelText("Through"), { target: { value: "2026-10-26" } });
+    const applyRange = screen.getByRole("button", { name: "Apply range" });
+    // Creating a book first loads the current month's days asynchronously.
+    // Wait for that request to finish before applying the custom range.
+    await waitFor(() => expect(applyRange).toBeEnabled());
+    fireEvent.click(applyRange);
+
+    await waitFor(() => expect(screen.getByText(/3 of 3 days included/)).toBeVisible());
+    fireEvent.click(screen.getByText("Choose days"));
+    fireEvent.click(screen.getByText("October 2026"));
+    const included = screen.getByRole("checkbox", { name: "Include October 25, 2026" });
+    expect(included).toBeChecked();
+    fireEvent.click(included);
+    await waitFor(() => expect(screen.getByText(/2 of 3 days included/)).toBeVisible());
+
     fireEvent.click(screen.getByRole("button", { name: "Save collection" }));
     expect(await screen.findByText("Collection saved.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByRole("region", { name: "Daily page preview" })).toBeVisible();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Generate PDF" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Generate PDF" }));
     expect(await screen.findByText("Collection saved. The local preview does not generate a PDF.")).toBeVisible();
     expect(screen.getByText("PDF status: preview-only")).toBeVisible();

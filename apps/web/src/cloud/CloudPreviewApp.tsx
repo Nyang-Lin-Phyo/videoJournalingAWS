@@ -160,8 +160,11 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
           const sources = [...entries.values()].filter(entry => entry.status === "completed" && localDate(entry.created_at) === dayKey).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.upload_id.localeCompare(b.upload_id));
           if (!sources.length) throw new Error("No ready transcripts were found for this day.");
           const current = dailyPages.get(key);
-          const blocks = current?.blocks.filter(block => !block.source || sources.some(source => source.upload_id === block.sourceJournalId)) ?? [];
-          const existing = new Set(blocks.filter(block => block.source).map(block => block.id));
+          const blocks = current?.blocks.filter(block => {
+            if (block.kind !== "text" || !block.source) return true;
+            return sources.some(source => source.upload_id === block.sourceJournalId);
+          }) ?? [];
+          const existing = new Set(blocks.filter(block => block.kind === "text" && block.source).map(block => block.id));
           for (const source of sources) {
             const paragraphs = (source.transcript ?? "").split(/\n\s*\n/).filter(text => text.trim());
             paragraphs.forEach((text, index) => {

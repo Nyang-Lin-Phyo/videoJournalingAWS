@@ -57,7 +57,7 @@ assert "'memory-book-templates.json'" in routes
 assert 'COPY memory-book-templates.json' in dockerfile
 dispatch=(root/'auth_results.py').read_text()
 assert "POST /memory-books/{book_id}/exports/{revision}/retry" in routes
-for route in ('GET /memory-books', 'GET /memory-narratives', 'PUT /memory-books/{book_id}', 'POST /memory-books/{book_id}/memories/{upload_id}/rewrite', 'POST /memory-books/{book_id}/reflections', 'POST /memory-books/{book_id}/exports', 'GET /memory-books/{book_id}/exports/{revision}', 'POST /memory-photos', 'GET /memory-photos', 'GET /memory-photos/{photo_id}', 'POST /memory-photos/{photo_id}/finalize', 'GET /memory-preferences', 'PUT /memory-preferences', 'POST /journals/text', 'GET /journals/{upload_id}/page', 'PUT /journals/{upload_id}/page'):
+for route in ('GET /memory-books', 'GET /memory-narratives', 'PUT /memory-books/{book_id}', 'POST /memory-books/{book_id}/memories/{upload_id}/rewrite', 'POST /memory-books/{book_id}/reflections', 'POST /memory-books/{book_id}/exports', 'GET /memory-books/{book_id}/exports/{revision}', 'POST /memory-photos', 'GET /memory-photos', 'GET /memory-photos/{photo_id}', 'POST /memory-photos/{photo_id}/finalize', 'GET /memory-preferences', 'PUT /memory-preferences', 'GET /journals/{upload_id}/page', 'PUT /journals/{upload_id}/page', 'GET /journal-days/{day}', 'PUT /journal-days/{day}'):
     assert route in routes, route
     assert route in dispatch, route
 assert 'POST /memory-books/{book_id}/exports/{revision}/retry' in dispatch

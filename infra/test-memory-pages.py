@@ -1,103 +1,158 @@
-"""Offline owner, revision, source-text, and export snapshot tests for journal pages."""
+"""Offline coverage for daily transcript pages and date-range Memory Book export."""
 import importlib.util
 import json
 import os
 import sys
-from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
-os.environ.update({'AWS_EC2_METADATA_DISABLED':'true','AWS_ACCESS_KEY_ID':'test','AWS_SECRET_ACCESS_KEY':'test',
-                   'AWS_DEFAULT_REGION':'us-east-1','UPLOAD_BUCKET':'test','JOURNAL_TABLE':'test'})
-root=Path(__file__).parent/'lambda'; sys.path.insert(0,str(root))
-spec=importlib.util.spec_from_file_location('journal_page_results',root/'auth_results.py')
-api=importlib.util.module_from_spec(spec); spec.loader.exec_module(api)
-owner='page-owner'; upload_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-row={'uploadId':upload_id,'userId':owner,'status':'completed','sourceType':'text','createdAt':'2026-11-20T12:00:00.000Z',
-     'title':'Typed memory','transcriptKey':f'transcripts/{owner}/{upload_id}.txt'}
+os.environ.update({
+    'AWS_EC2_METADATA_DISABLED': 'true', 'AWS_ACCESS_KEY_ID': 'test',
+    'AWS_SECRET_ACCESS_KEY': 'test', 'AWS_DEFAULT_REGION': 'us-east-1',
+    'UPLOAD_BUCKET': 'test', 'JOURNAL_TABLE': 'test',
+})
+root = Path(__file__).parent / 'lambda'
+sys.path.insert(0, str(root))
+spec = importlib.util.spec_from_file_location('journal_page_results', root / 'auth_results.py')
+api = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(api)
+
+OWNER = 'page-owner'
+DAY = '2026-11-20'
+FIRST_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+SECOND_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+FIRST_TEXT = 'First recorded thought.\r\n\r\nAnother paragraph.'
+SECOND_TEXT = 'A second recording from this day.'
+ROWS = [
+    {'uploadId': FIRST_ID, 'userId': OWNER, 'status': 'completed', 'createdAt': '2026-11-20T12:00:00.000Z',
+     'title': 'Morning memory', 'transcriptKey': f'transcripts/{OWNER}/{FIRST_ID}.txt'},
+    {'uploadId': SECOND_ID, 'userId': OWNER, 'status': 'completed', 'createdAt': '2026-11-20T20:00:00.000Z',
+     'title': 'Evening memory', 'transcriptKey': f'transcripts/{OWNER}/{SECOND_ID}.txt'},
+]
+TEXTS = {FIRST_ID: FIRST_TEXT, SECOND_ID: SECOND_TEXT}
 
 
 def payload(response):
     return json.loads(response['body'])
 
 
-def test_text_journal_preserves_exact_source_and_exposes_history_fields():
-    api.table=MagicMock(); api.s3=MagicMock()
-    api.s3.put_object.return_value={}
-    text='First paragraph.\r\n\r\nSecond paragraph, exact.'
-    response=api.handle_create_text_journal({'body':json.dumps({'text':text})},owner)
-    assert response['statusCode']==201
-    transaction=api.table.meta.client.transact_write_items.call_args.kwargs['TransactItems']
-    saved=transaction[1]['Put']['Item']
-    assert saved['sourceType']=='text' and saved['status']=='completed' and saved['title']=='Journal entry'
-    assert api.s3.put_object.call_args.kwargs['Body']==text.encode('utf-8')
-    assert saved['transcriptKey']==f"transcripts/{owner}/{saved['uploadId']}.txt"
-    assert transaction[0]['ConditionCheck']['Key']=={'uploadId':f'account#{owner}'}
+def saved_transcript(_row, upload_id, owner):
+    assert owner == OWNER
+    return TEXTS[upload_id], None
 
 
-def test_virtual_page_splits_paragraphs_deterministically_without_losing_source():
-    source='First line.\r\n\r\n' + ('A long single run. ' * 130)
-    api.table=MagicMock(); api.table.get_item.return_value={}
-    with patch.object(api,'find_journal',return_value=row), patch.object(api,'saved_transcript',return_value=(source,None)):
-        first=payload(api.handle_get_journal_page(upload_id,owner))
-        second=payload(api.handle_get_journal_page(upload_id,owner))
-    assert first['revision']==0 and first['originalText']==source
-    assert ''.join(block['text'] for block in first['blocks'])==source
-    assert [b['id'] for b in first['blocks']]==[b['id'] for b in second['blocks']]
-    assert len(first['blocks'])>2
+def source_blocks():
+    blocks = []
+    for row in ROWS:
+        for index, block in enumerate(api.default_journal_page_blocks(TEXTS[row['uploadId']])):
+            blocks.append({**block, 'id': f'source-{row["uploadId"]}-{index+1:04d}',
+                           'source': True, 'sourceJournalId': row['uploadId']})
+    return blocks
 
 
-def test_saved_page_transaction_checks_photo_owner_and_stale_revision():
-    api.table=MagicMock()
-    with patch.object(api,'find_journal',return_value=row), patch.object(api,'saved_transcript',return_value=('Original text.',None)):
-        bad_photo={'revision':0,'highlightPage':False,'blocks':[{'id':'img','kind':'image','width':'half','photoId':upload_id}]}
-        with patch.object(api,'valid_memory_photo',return_value=False):
-            assert api.handle_put_journal_page({'body':json.dumps(bad_photo)},upload_id,owner)['statusCode']==400
-
-        good={'revision':0,'highlightPage':True,'blocks':[{'id':'text-1','kind':'text','width':'wide','text':'Original and edited text.','highlight':'edited'}]}
-        api.table.get_item.return_value={}
-        saved=api.handle_put_journal_page({'body':json.dumps(good)},upload_id,owner)
-        assert saved['statusCode']==200 and payload(saved)['revision']==1
-        transaction=api.table.meta.client.transact_write_items.call_args.kwargs['TransactItems']
-        version=next(item['Put']['Item'] for item in transaction if item.get('Put',{}).get('Item',{}).get('recordType')=='journal-page-version')
-        assert version['blocks'][0]['highlight']=='edited' and version['highlightPage'] is True
-        assert any(item.get('ConditionCheck',{}).get('Key')=={'uploadId':upload_id} for item in transaction)
-
-        api.table.get_item.return_value={'Item':{'userId':f'memory-book#{owner}','recordType':'journal-page-latest','journalId':upload_id,'revision':1}}
-        stale=dict(good,revision=0)
-        result=api.handle_put_journal_page({'body':json.dumps(stale)},upload_id,owner)
-        assert result['statusCode']==409
+def test_daily_page_combines_originals_and_preserves_locked_text():
+    api.table = MagicMock()
+    api.table.get_item.return_value = {}
+    with patch.object(api, 'journal_day_sources', return_value=ROWS), \
+         patch.object(api, 'saved_transcript', side_effect=saved_transcript):
+        page, error = api.daily_page_document(OWNER, DAY, ZoneInfo('UTC'))
+    assert error is None and page['revision'] == 0
+    assert page['dayKey'] == DAY and page['timezone'] == 'UTC'
+    assert [source['id'] for source in page['sources']] == [FIRST_ID, SECOND_ID]
+    assert [source['title'] for source in page['sources']] == ['Morning memory', 'Evening memory']
+    assert page['originalText'] == FIRST_TEXT + '\n\n' + SECOND_TEXT
+    assert [(block['sourceJournalId'], block['text']) for block in page['blocks']] == [
+        (block['sourceJournalId'], block['text']) for block in source_blocks()]
+    assert all(block['source'] is True for block in page['blocks'])
 
 
-def test_export_pins_decimal_dynamodb_page_revision_not_latest():
-    book={'contentMode':'journal-pages','revision':7,'includeHighlights':True,'entries':[{'id':upload_id,'title':'Old title','date':row['createdAt'],'included':True}]}
-    api.table=MagicMock()
-    api.table.get_item.side_effect=[
-        {'Item':{'userId':f'memory-book#{owner}','recordType':'journal-page-latest','journalId':upload_id,'revision':Decimal('3')}},
-        {'Item':{'userId':f'memory-book#{owner}','recordType':'journal-page-version','journalId':upload_id,'revision':Decimal('3'),'blocks':[]}},
-    ]
-    with patch.object(api,'find_journal',return_value=row):
-        snapshot,entries,error,status=api.make_journal_page_export_snapshot(owner,book)
+def test_daily_page_rejects_tampered_transcript_and_foreign_photos():
+    api.table = MagicMock()
+    api.table.get_item.return_value = {}
+    blocks = source_blocks()
+    event = lambda changed: {
+        'queryStringParameters': {'timezone': 'UTC'},
+        'body': json.dumps({'revision': 0, 'highlightPage': False, 'blocks': changed}),
+    }
+    with patch.object(api, 'journal_day_sources', return_value=ROWS), \
+         patch.object(api, 'saved_transcript', side_effect=saved_transcript):
+        tampered = [{**blocks[0], 'text': 'Changed original transcript'}] + blocks[1:]
+        assert api.handle_put_daily_page(event(tampered), DAY, OWNER)['statusCode'] == 400
+        missing = blocks[1:]
+        assert api.handle_put_daily_page(event(missing), DAY, OWNER)['statusCode'] == 409
+        foreign_image = {'id': 'photo-box', 'kind': 'image', 'width': 'half', 'photoId': FIRST_ID}
+        with patch.object(api, 'valid_memory_photo', return_value=False):
+            assert api.handle_put_daily_page(event(blocks + [foreign_image]), DAY, OWNER)['statusCode'] == 400
+    with patch.object(api, 'journal_day_sources', return_value=[]):
+        assert api.handle_put_daily_page(event(blocks), DAY, OWNER)['statusCode'] == 404
+
+
+def test_daily_page_revision_saves_notes_and_checks_stale_writes():
+    api.table = MagicMock()
+    api.table.get_item.return_value = {}
+    blocks = source_blocks()
+    note = {'id': 'private-note-1', 'kind': 'text', 'width': 'half',
+            'text': 'A small added note.', 'highlight': 'small', 'widthPercent': 60, 'style': 'note'}
+    event = {'queryStringParameters': {'timezone': 'UTC'},
+             'body': json.dumps({'revision': 0, 'highlightPage': True, 'blocks': blocks + [note]})}
+    with patch.object(api, 'journal_day_sources', return_value=ROWS), \
+         patch.object(api, 'saved_transcript', side_effect=saved_transcript), \
+         patch.object(api, 'daily_page_document', return_value=({'revision': 1}, None)):
+        result = api.handle_put_daily_page(event, DAY, OWNER)
+        assert result['statusCode'] == 200 and payload(result)['revision'] == 1
+        transaction = api.table.meta.client.transact_write_items.call_args.kwargs['TransactItems']
+        assert transaction[0]['ConditionCheck']['Key'] == {'uploadId': f'account#{OWNER}'}
+        version = next(item['Put']['Item'] for item in transaction
+                       if item.get('Put', {}).get('Item', {}).get('recordType') == 'journal-day-version')
+        assert version['revision'] == 1 and version['highlightPage'] is True
+        assert version['blocks'][-1]['highlight'] == 'small'
+        assert version['blocks'][-1]['widthPercent'] == 60
+        assert all('text' not in block for block in version['blocks'] if block.get('source'))
+        assert len(version['sources']) == 2
+        api.table.get_item.return_value = {'Item': {
+            'userId': f'memory-book#{OWNER}', 'recordType': 'journal-day-latest',
+            'dayKey': DAY, 'revision': 1}}
+        assert api.handle_put_daily_page(event, DAY, OWNER)['statusCode'] == 409
+
+
+def test_export_pins_the_daily_revision_and_groups_recordings():
+    book = {'contentMode': 'journal-pages', 'revision': 7, 'timezone': 'UTC',
+            'dateStart': DAY, 'dateEnd': DAY, 'excludedDays': [],
+            'entries': [{'id': row['uploadId'], 'title': 'Old title',
+                         'date': row['createdAt'], 'included': True} for row in ROWS]}
+    daily = {'revision': 3, 'sources': [
+        {'id': row['uploadId'], 'title': row['title'], 'date': row['createdAt']} for row in ROWS],
+        'legacyPageRevisions': {}, 'blocks': source_blocks()}
+    with patch.object(api, 'find_journal', side_effect=lambda upload_id, owner:
+                      next((row for row in ROWS if owner == OWNER and row['uploadId'] == upload_id), None)), \
+         patch.object(api, 'daily_page_document', return_value=(daily, None)):
+        snapshot, entries, error, status = api.make_journal_page_export_snapshot(OWNER, book)
     assert error is None and status is None
-    assert snapshot['pageRefs']==[{'journalId':upload_id,'pageRevision':3}]
-    assert snapshot['entries']==entries==[{'id':upload_id,'title':'Typed memory','date':row['createdAt'],'included':True}]
+    assert len(entries) == 1 and entries[0]['id'] == DAY
+    assert [record['title'] for record in entries[0]['records']] == ['Morning memory', 'Evening memory']
+    assert snapshot['pageRefs'] == [{'dayKey': DAY, 'pageRevision': 3,
+                                    'sourceIds': [FIRST_ID, SECOND_ID], 'legacyPageRevisions': {}}]
+    assert snapshot['entries'] == entries
 
 
-def test_journal_delete_cleans_page_pointer_and_all_immutable_revisions():
-    api.table=MagicMock()
-    pointer={'userId':f'memory-book#{owner}','recordType':'journal-page-latest','journalId':upload_id,'revision':2}
-    v1={'userId':f'memory-book#{owner}','recordType':'journal-page-version','journalId':upload_id}
-    v2=dict(v1)
-    api.table.get_item.side_effect=[{'Item':pointer},{'Item':v1},{'Item':v2}]
-    api.delete_journal_page_records(owner,upload_id)
-    keys=[call.kwargs['Key']['uploadId'] for call in api.table.delete_item.call_args_list]
-    assert keys==[f'journal-page-version#{owner}#{upload_id}#1',f'journal-page-version#{owner}#{upload_id}#2',f'journal-page#{owner}#{upload_id}']
+def test_legacy_journal_page_delete_cleans_pointer_and_versions():
+    api.table = MagicMock()
+    pointer = {'userId': f'memory-book#{OWNER}', 'recordType': 'journal-page-latest',
+               'journalId': FIRST_ID, 'revision': 2}
+    version = {'userId': f'memory-book#{OWNER}', 'recordType': 'journal-page-version', 'journalId': FIRST_ID}
+    api.table.get_item.side_effect = [{'Item': pointer}, {'Item': version}, {'Item': version}]
+    api.delete_journal_page_records(OWNER, FIRST_ID)
+    keys = [call.kwargs['Key']['uploadId'] for call in api.table.delete_item.call_args_list]
+    assert keys == [api.journal_page_version_key(OWNER, FIRST_ID, 1),
+                    api.journal_page_version_key(OWNER, FIRST_ID, 2), api.journal_page_key(OWNER, FIRST_ID)]
 
 
-if __name__=='__main__':
-    test_text_journal_preserves_exact_source_and_exposes_history_fields()
-    test_virtual_page_splits_paragraphs_deterministically_without_losing_source()
-    test_saved_page_transaction_checks_photo_owner_and_stale_revision()
-    test_export_pins_decimal_dynamodb_page_revision_not_latest()
-    test_journal_delete_cleans_page_pointer_and_all_immutable_revisions()
-    print('PASS exact text source, virtual page layout, owner-checked immutable revisions, export pinning, and journal deletion cleanup')
+if __name__ == '__main__':
+    test_daily_page_combines_originals_and_preserves_locked_text()
+    test_daily_page_rejects_tampered_transcript_and_foreign_photos()
+    test_daily_page_revision_saves_notes_and_checks_stale_writes()
+    test_export_pins_the_daily_revision_and_groups_recordings()
+    test_legacy_journal_page_delete_cleans_pointer_and_versions()
+    print('PASS daily source preservation, tamper rejection, photo ownership, and immutable revisions')
+    print('PASS date-range daily PDF revision pinning and legacy journal-page cleanup')

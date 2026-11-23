@@ -69,10 +69,11 @@ function previewBlocks(page: JournalPage, photos: MemoryPhoto[], includeHighligh
   const seen = new Set<string>();
   const sourceTitles = new Map((page.sources ?? []).map(source => [source.id, source.title]));
   return page.blocks.flatMap(block => {
-    const title = block.source && block.sourceJournalId && !seen.has(block.sourceJournalId) ? sourceTitles.get(block.sourceJournalId) : undefined;
-    if (block.source && block.sourceJournalId) seen.add(block.sourceJournalId);
+    const sourceJournalId = block.kind === "text" && block.source ? block.sourceJournalId : undefined;
+    const title = sourceJournalId && !seen.has(sourceJournalId) ? sourceTitles.get(sourceJournalId) : undefined;
+    if (sourceJournalId) seen.add(sourceJournalId);
     return [
-      ...(title ? [<h2 className="journal-preview-source" key={`source-${block.sourceJournalId}`}>{title}</h2>] : []),
+      ...(title ? [<h2 className="journal-preview-source" key={`source-${sourceJournalId}`}>{title}</h2>] : []),
       pageBlockPreview(block, photos, includeHighlights),
     ];
   });

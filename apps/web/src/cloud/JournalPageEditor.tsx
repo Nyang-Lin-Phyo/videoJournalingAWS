@@ -58,7 +58,7 @@ export function JournalPageEditor({ dayKey, timezone, onBack }: { dayKey: string
 
   function startGesture(id: string, mode: Gesture["mode"], event: ReactPointerEvent<HTMLElement>, edge?: string) {
     if (busy) return;
-    const block = page.blocks.find(value => value.id === id);
+    const block = pageSnapshot.blocks.find(value => value.id === id);
     if (!block) return;
     event.stopPropagation();
     const target = event.currentTarget;
@@ -132,7 +132,7 @@ export function JournalPageEditor({ dayKey, timezone, onBack }: { dayKey: string
     setSelection(null); setNotice("Sentence marked as a highlight. Save the page to keep it."); setError("");
   }
   function deleteBlock(id: string) {
-    const block = page.blocks.find(value => value.id === id);
+    const block = pageSnapshot.blocks.find(value => value.id === id);
     if (!block || (block.kind === "text" && block.source)) return;
     setPage(current => current ? ({ ...current, blocks: current.blocks.filter(value => value.id !== id) }) : current);
     setOptionsId(null); setSelectedId(null);
