@@ -1,0 +1,18 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - set -eu
+      - python3 --version
+      - dnf install -y cairo pango gdk-pixbuf2 libffi shared-mime-info fontconfig dejavu-sans-fonts dejavu-serif-fonts
+  build:
+    commands:
+      - set -eu
+      - python3 package_renderer.py
+      - test -s build/renderer.zip
+      - test -s build/layer.zip
+      - aws s3 cp build/renderer.zip "s3://${BUILD_BUCKET}/${BUILD_PREFIX}/renderer.zip" --sse AES256 --no-progress
+      - aws s3 cp build/layer.zip "s3://${BUILD_BUCKET}/${BUILD_PREFIX}/layer.zip" --sse AES256 --no-progress
+      - aws s3 cp build/manifest.json "s3://${BUILD_BUCKET}/${BUILD_PREFIX}/manifest.json" --sse AES256 --no-progress

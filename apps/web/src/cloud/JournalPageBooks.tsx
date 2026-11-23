@@ -1,6 +1,7 @@
+import "./journal-editor-v2.css";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useCloudEnvironment } from "./CloudEnvironment";
-import type { JournalPage, JournalPageBlock, JournalSummary, MemoryBookRecord, MemoryPhoto } from "./analysisApi";
+import type { JournalPage, JournalPageBlock, JournalSummary, MemoryBookRecord, MemoryPhoto, MemoryExportHistoryItem } from "./analysisApi";
 import templateCatalog from "../../../../infra/lambda/memory-book-templates.json";
 
 function titleFor(entries: MemoryBookRecord["entries"]) {
@@ -95,6 +96,9 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
   const [exportRevision, setExportRevision] = useState<number | null>(null);
   const [exportUrl, setExportUrl] = useState("");
   const [exportStatus, setExportStatus] = useState("");
+  const [exportHistory, setExportHistory] = useState<MemoryExportHistoryItem[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [previewPage, setPreviewPage] = useState<JournalPage | null>(null);
   const [previewDay, setPreviewDay] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -113,6 +117,19 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
     setBook(current => current ?? pageBooks[0] ?? null);
   }
   useEffect(() => { void reload().catch(e => setError(e instanceof Error ? e.message : "Unable to load journal pages.")); }, [accessToken, services]);
+
+  // Fetch real saved export records for this book. Download URLs are requested only
+  // when clicked because S3 presigned links expire after five minutes.
+  useEffect(() => {
+    let live = true;
+    if (!book?.id || book.revision < 1) { setExportHistory([]); setHistoryError(""); return; }
+    setLoadingHistory(true); setHistoryError("");
+    void services.fetchMemoryExportHistory(accessToken, book.id)
+      .then(records => { if (live) setExportHistory(records); })
+      .catch(error => { if (live) { setExportHistory([]); setHistoryError(error instanceof Error ? error.message : "Unable to load saved PDF history."); } })
+      .finally(() => { if (live) setLoadingHistory(false); });
+    return () => { live = false; };
+  }, [accessToken, book?.id, book?.revision, services]);
 
   function dayKey(value: string) {
     return localDayKey(value, book?.timezone || "UTC");
@@ -230,7 +247,7 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
     }).map(entry => [entry.id, entry]));
     const entries = [...entriesById.values()];
     setRangePreset(preset); setRangeDraft({ start, end }); setRangeLoading(true); setJournals([]);
-    commit({ ...book, dateStart: start, dateEnd: end, entries, excludedDays: [...excluded], title: titleFor(entries) });
+    commit({ ...book, dateStart: start, dateEnd: end, entries, excludedDays: [...excluded] });
   }
   function setDaysIncluded(days: string[], include: boolean) {
     if (!book) return;
@@ -246,7 +263,7 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
         : { ...entryFromJournal(journal), included: include });
     }
     const entries = [...byId.values()];
-    commit({ ...book, entries, excludedDays: [...excluded], title: titleFor(entries) });
+    commit({ ...book, entries, excludedDays: [...excluded] });
   }
   function restoreExcludedDays() {
     if (!book || !excludedInRange.length) return;
@@ -259,11 +276,11 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
       byId.set(journal.upload_id, current ? { ...current, included: true } : { ...entryFromJournal(journal), included: true });
     }
     const entries = [...byId.values()];
-    commit({ ...book, entries, excludedDays: [...excluded], title: titleFor(entries) });
+    commit({ ...book, entries, excludedDays: [...excluded] });
   }
   async function save(explicitNotice = true) {
     if (!book || rangeLoading) return null;
-    const updated = { ...book, title: titleFor(book.entries) };
+    const updated = { ...book, title: book.title.trim() || titleFor(book.entries) };
     setBusy(true); setError("");
     try {
       const saved = await services.saveMemoryBook(accessToken, updated);
@@ -278,7 +295,12 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
     const saved = await save(false); if (!saved) return;
     if (isPreview) { setExportRevision(saved.revision); setExportStatus("preview-only"); setNotice("Collection saved. The local preview does not generate a PDF."); return; }
     setBusy(true); setNotice("");
-    try { const job = await services.startMemoryExport(accessToken, saved.id); setExportRevision(job.revision); setExportStatus(job.status); setExportUrl(""); setNotice(`PDF export ${job.status}.`); }
+    try {
+      const job = await services.startMemoryExport(accessToken, saved.id);
+      setExportRevision(job.revision); setExportStatus(job.status); setExportUrl("");
+      setExportHistory(current => [{ revision: job.revision, status: job.status, created_at: new Date().toISOString() }, ...current.filter(item => item.revision !== job.revision)]);
+      setNotice(`PDF export ${job.status}. You can leave and return to this collection later.`);
+    }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to start PDF export."); }
     finally { setBusy(false); }
   }
@@ -305,9 +327,33 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
   async function checkExport() {
     if (!book || exportRevision === null) return;
     const requestId = ++requestGeneration.current, bookId = book.id, revision = exportRevision;
-    try { const result = await services.fetchMemoryExport(accessToken, bookId, revision); if (requestGeneration.current !== requestId) return; setExportStatus(result.status); if (result.download_url) setExportUrl(result.download_url); setNotice(result.download_url ? "PDF is ready." : `PDF status: ${result.status}.`); }
+    try {
+      const result = await services.fetchMemoryExport(accessToken, bookId, revision);
+      if (requestGeneration.current !== requestId) return;
+      setExportStatus(result.status);
+      setExportHistory(current => current.map(item => item.revision === revision ? { ...item, status: result.status } : item));
+      if (result.download_url) setExportUrl(result.download_url);
+      setNotice(result.download_url ? "PDF is ready. Use the Download PDF link below." : `PDF status: ${result.status}.`);
+    }
     catch (e) { if (requestGeneration.current === requestId) setError(e instanceof Error ? e.message : "Unable to check PDF status."); }
   }
+  async function openSavedExport(revision: number) {
+    if (!book) return;
+    setError(""); setExportRevision(revision); setExportUrl("");
+    try {
+      const result = await services.fetchMemoryExport(accessToken, book.id, revision);
+      setExportStatus(result.status);
+      if (result.download_url) { setExportUrl(result.download_url); setNotice(`PDF revision ${revision} is ready. Click Download PDF.`); }
+      else setNotice(`PDF revision ${revision}: ${result.status}.`);
+    } catch (error) { setError(error instanceof Error ? error.message : "Unable to retrieve this PDF."); }
+  }
+  // Update a running export automatically; the manual status button remains as a fallback.
+  useEffect(() => {
+    if (isPreview || exportRevision === null || !["queued", "rendering"].includes(exportStatus)) return;
+    const timer = window.setInterval(() => { void checkExport(); }, 3500);
+    return () => window.clearInterval(timer);
+  }, [isPreview, book?.id, exportRevision, exportStatus]);
+
   async function remove() {
     if (!book || !window.confirm(`Delete “${book.title}”?`)) return;
     try { if (book.revision > 0) await services.deleteMemoryBook(accessToken, book.id); requestGeneration.current += 1; setBooks(value => value.filter(item => item.id !== book.id)); setBook(null); setNotice("Collection deleted."); }
@@ -333,7 +379,7 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
   const displayDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { dateStyle: "long", timeZone: "UTC" });
 
   return <section className="journal-page-books">
-    <header className="memory-head"><div><p className="eyebrow">SAVED PAGES, GATHERED</p><h1>Memory books</h1><p>Choose a date range. Each included day becomes one page; longer days can continue across printed sheets.</p></div><div className="memory-actions"><button className="button button-secondary" disabled={busy} onClick={create}>Create a book</button><button className="button button-secondary" disabled={busy} onClick={onLegacy}>Previous books and templates</button></div></header>
+    <header className="memory-head"><div><p className="eyebrow">SAVED PAGES, GATHERED</p><h1>Memory books</h1><p>1. Choose days → 2. Save collection → 3. Generate PDF → 4. Download it. Saved PDFs remain available below when you reopen a collection.</p>{isPreview && <p className="memory-muted">Local preview: collections stay in this browser session; real PDF rendering is available after backend deployment.</p>}</div><div className="memory-actions"><button className="button button-secondary" disabled={busy} onClick={create}>Create a book</button><button className="button button-secondary" disabled={busy} onClick={onLegacy}>Previous books and templates</button></div></header>
     {error && <p role="alert" className="journal-editor-error">{error}</p>}{notice && <p role="status">{notice}</p>}
     <fieldset disabled={busy} className="journal-books-fieldset"><div className="journal-books-layout">
       <aside className="journal-book-list"><h2>Your collections</h2>{books.map(item => <button key={item.id} className={`memory-book-choice ${item.id === book?.id ? "chosen" : ""}`} onClick={() => {
@@ -343,7 +389,8 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
         setJournals([]); setRangeLoading(true); setPreviewPage(null); setPreviewDay(""); setExportRevision(null); setExportUrl(""); setExportStatus(""); setShowDayPicker(false);
       }}>{item.title}<small>{dayCount(item.entries, item.timezone ?? "UTC")} days</small></button>)}{!books.length && <p className="memory-muted">Create a collection to gather journal pages.</p>}</aside>
       {book ? <section className="journal-book-editor">
-        <h2>{titleFor(book.entries)}</h2>
+        <label className="journal-collection-name">Collection name<input aria-label="Collection name" type="text" maxLength={120} value={book.title} onChange={e => setBook(current => current ? ({ ...current, title: e.target.value }) : current)} placeholder="Name this memory book"/></label>
+        <p className="journal-collection-status">{book.revision ? `Saved version ${book.revision} · Changes to the layout or dates must be saved again` : "Unsaved collection · Save it to keep it"}</p>
         <section className="journal-book-range-panel" aria-labelledby="journal-book-range-heading">
           <p className="eyebrow">STEP 1 · CHOOSE YOUR DATE RANGE</p><h3 id="journal-book-range-heading">Which days should be in this book?</h3>
           <div className="journal-range-presets" role="group" aria-label="Date range preset">
@@ -373,7 +420,12 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
 
         <label className="journal-highlight-toggle"><input type="checkbox" checked={book.includeHighlights === true} onChange={e => { const next = { ...book, includeHighlights: e.target.checked }; requestGeneration.current += 1; setBook(next); setBooks(value => value.map(item => item.id === next.id ? next : item)); setExportUrl(""); setExportRevision(null); setExportStatus(""); }}/> Include page highlights in the PDF</label>
         <label className="journal-book-template">Print template<select value={book.templateId ?? "notebook-v1"} onChange={e => changeTemplate(e.target.value)}>{templateCatalog.templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
-        <div className="memory-actions"><button className="button button-secondary" disabled={busy || rangeLoading} onClick={() => void save()}>Save collection</button><button className="button button-secondary" disabled={busy} onClick={() => void remove()}>Delete collection</button></div>
+        <section className="journal-book-save-panel"><p className="eyebrow">STEP 2 · SAVE YOUR COLLECTION</p><p>Saving keeps your date range and included days. It does not create a PDF yet.</p><div className="memory-actions"><button className="button button-primary" disabled={busy || rangeLoading || !book.title.trim()} onClick={() => void save()}>Save collection</button><button className="button button-secondary" disabled={busy} onClick={() => void remove()}>Delete collection</button></div></section>
+        <section className="journal-export-history" aria-label="Saved PDF exports"><p className="eyebrow">STEP 4 · YOUR PREVIOUS PDFS</p><h3>Saved PDFs</h3><p className="memory-muted">Generated PDFs are private. Click a version to obtain a fresh, temporary download link.</p>
+        {loadingHistory && <p>Checking saved PDF exports…</p>}{historyError && <p role="alert">{historyError}</p>}
+        {!loadingHistory && !historyError && exportHistory.length === 0 && <p className="memory-muted">No PDFs generated for this collection yet. Select Generate PDF above after saving.</p>}
+        {exportHistory.length > 0 && <ul>{exportHistory.map(item => <li key={item.revision}><div><strong>PDF version {item.revision}</strong><small>{item.status}{item.created_at ? ` · ${new Date(item.created_at).toLocaleString()}` : ""}</small></div><button type="button" className="button button-secondary" onClick={() => void openSavedExport(item.revision)}>{item.status === "complete" ? "Get download link" : "View status"}</button></li>)}</ul>}
+        {exportUrl && <a className="button button-primary" href={exportUrl} target="_blank" rel="noreferrer">Download PDF</a>}</section>
         {previewDay && <section ref={previewRef} id="journal-book-preview" className="journal-book-preview" aria-label="Daily page preview"><div className="journal-preview-navigation"><div><p className="eyebrow">PDF PREVIEW · {includedDayKeys.length} DAYS · {selectedTemplate.name.toUpperCase()}</p><h3>{displayDay(previewDay)}{previewPage ? ` · ${previewPage.sources?.length ?? 0} recording${previewPage.sources?.length === 1 ? "" : "s"}` : ""}</h3></div><button type="button" className="button button-secondary" onClick={() => { previewGeneration.current += 1; setPreviewDay(""); setPreviewPage(null); }}>Close preview</button></div><div className="journal-preview-navigation"><button type="button" className="button button-secondary" disabled={previewIndex <= 0 || previewLoading} onClick={() => void openPreviewDay(includedDayKeys[previewIndex - 1]!)}>Previous day</button><label>Go to day<select value={previewDay} onChange={event => void openPreviewDay(event.target.value)}>{includedDayKeys.map(day => <option key={day} value={day}>{displayDay(day)}</option>)}</select></label><button type="button" className="button button-secondary" disabled={previewIndex < 0 || previewIndex >= includedDayKeys.length - 1 || previewLoading} onClick={() => void openPreviewDay(includedDayKeys[previewIndex + 1]!)}>Next day</button></div>{previewLoading && <p role="status">Loading this day…</p>}{previewPage && <article className={`journal-a4-preview journal-day-preview template-${dailyPrint.treatment} ${book.includeHighlights === true && previewPage.highlightPage ? "is-page-highlight" : ""}`} style={{ ...previewStyle, "--daily-heading-font": previewHeadingFont } as CSSProperties}><header><strong>{displayDay(previewDay)}</strong></header>{previewBlocks(previewPage, previewPhotos, book.includeHighlights === true)}</article>}</section>}
       </section> : <div className="memory-empty">Create a new collection and choose a date range.</div>}
     </div></fieldset>

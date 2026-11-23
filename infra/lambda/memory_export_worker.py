@@ -674,7 +674,7 @@ def render_journal_pages_html(book, pages, image_urls):
             block_class = f'page-block width-{block["width"]}'
             try:
                 x, y, rotation = int(block.get('x', 0)), int(block.get('y', 0)), int(block.get('rotation', 0))
-                if not -80 <= x <= 80 or not -80 <= y <= 80 or not -30 <= rotation <= 30:
+                if not -180 <= x <= 180 or not -300 <= y <= 300 or not -30 <= rotation <= 30:
                     raise ValueError
                 raw_width = block.get('widthPercent')
                 width_percent = int(raw_width) if raw_width is not None else None
@@ -686,7 +686,12 @@ def render_journal_pages_html(book, pages, image_urls):
                     raise ValueError
             except (TypeError, ValueError):
                 raise ValueError('A page block layout is invalid')
-            layout_style = f'transform:translate({x}mm,{y}mm) rotate({rotation}deg)' + (f';width:{width_percent}%' if width_percent is not None else '') + (f';min-height:{height_mm}mm' if height_mm is not None else '')
+            layer = block.get('layer')
+            if layer is not None and (isinstance(layer, bool) or not isinstance(layer, int) or not 1 <= layer <= 500):
+                raise ValueError('A page layer is invalid')
+            # Layers do not change source order, only the drawing order when blocks overlap.
+            z_index = 600 - (layer if layer is not None else len(page['blocks']))
+            layout_style = f'position:relative;z-index:{z_index};transform:translate({x}mm,{y}mm) rotate({rotation}deg)' + (f';width:{width_percent}%' if width_percent is not None else '') + (f';min-height:{height_mm}mm' if height_mm is not None else '')
             if block.get('kind') == 'text':
                 text = block.get('text')
                 if not isinstance(text, str):

@@ -279,8 +279,13 @@ def validate_journal_page_blocks(blocks, owner, original_text, daily_sources=Non
                 block_id in ids or width not in ('full', 'wide', 'half')):
             return None, 'Page block IDs must be unique and widths must be full, wide, or half.'
         ids.add(block_id)
+        name, layer = block.get('name'), block.get('layer')
+        if (name is not None and (not isinstance(name, str) or len(name) > 80 or
+                                  re.search(r'[\x00-\x1f\x7f]', name))) or \
+                (layer is not None and (isinstance(layer, bool) or not isinstance(layer, int) or not 1 <= layer <= 500)):
+            return None, 'Block names must be short plain text and layer numbers must be 1 to 500.'
         if kind == 'text':
-            if set(block) - {'id', 'kind', 'width', 'widthPercent', 'heightMm', 'text', 'style', 'highlight', 'source', 'sourceJournalId', 'x', 'y', 'rotation', 'fontSize'}:
+            if set(block) - {'id', 'kind', 'width', 'widthPercent', 'heightMm', 'text', 'style', 'highlight', 'source', 'sourceJournalId', 'x', 'y', 'rotation', 'fontSize', 'name', 'layer'}:
                 return None, 'Invalid text block fields.'
             text = block.get('text')
             style = block.get('style', 'paragraph')
@@ -294,7 +299,7 @@ def validate_journal_page_blocks(blocks, owner, original_text, daily_sources=Non
                     style not in ('paragraph', 'note') or
                     not isinstance(source, bool) or
                     any(isinstance(value, bool) or not isinstance(value, int) for value in (x, y, rotation, font_size)) or
-                    not -80 <= x <= 80 or not -80 <= y <= 80 or not -30 <= rotation <= 30 or not 10 <= font_size <= 32 or
+                    not -180 <= x <= 180 or not -300 <= y <= 300 or not -30 <= rotation <= 30 or not 10 <= font_size <= 32 or
                     (width_percent is not None and (isinstance(width_percent, bool) or not isinstance(width_percent, int) or not 20 <= width_percent <= 100)) or
                     (height_mm is not None and (isinstance(height_mm, bool) or not isinstance(height_mm, int) or not 15 <= height_mm <= 260)) or
                     (highlight is not None and (not isinstance(highlight, str) or not highlight or len(highlight) > 2000 or highlight not in text))):
@@ -325,7 +330,7 @@ def validate_journal_page_blocks(blocks, owner, original_text, daily_sources=Non
             if highlight is not None:
                 result['highlight'] = highlight
         elif kind == 'image':
-            if set(block) - {'id', 'kind', 'width', 'widthPercent', 'heightMm', 'photoId', 'caption', 'highlight', 'x', 'y', 'rotation'}:
+            if set(block) - {'id', 'kind', 'width', 'widthPercent', 'heightMm', 'photoId', 'caption', 'highlight', 'x', 'y', 'rotation', 'name', 'layer'}:
                 return None, 'Invalid image block fields.'
             photo_id = block.get('photoId')
             caption = block.get('caption', '')
@@ -337,7 +342,7 @@ def validate_journal_page_blocks(blocks, owner, original_text, daily_sources=Non
                     not valid_memory_photo(owner, photo_id) or not isinstance(caption, str) or len(caption) > 500 or
                     not isinstance(highlight, bool) or
                     any(isinstance(value, bool) or not isinstance(value, int) for value in (x, y, rotation)) or
-                    not -80 <= x <= 80 or not -80 <= y <= 80 or not -30 <= rotation <= 30 or
+                    not -180 <= x <= 180 or not -300 <= y <= 300 or not -30 <= rotation <= 30 or
                     (width_percent is not None and (isinstance(width_percent, bool) or not isinstance(width_percent, int) or not 20 <= width_percent <= 100))):
                 return None, 'Image blocks need a private photo owned by this account.'
             if height_mm is not None and (isinstance(height_mm, bool) or not isinstance(height_mm, int) or not 15 <= height_mm <= 260):
@@ -352,6 +357,8 @@ def validate_journal_page_blocks(blocks, owner, original_text, daily_sources=Non
             if height_mm is not None: result['heightMm'] = height_mm
         else:
             return None, 'Page blocks must be text or image blocks.'
+        if name: result['name'] = name
+        if layer is not None: result['layer'] = layer
         output.append(result)
     if total > 256 * 1024 or len(json.dumps(output, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) > 350000:
         return None, 'The edited page is too large to save.'
@@ -1730,6 +1737,34 @@ def handle_memory_export(event, owner):
     return respond(202, {'book_id': book_id, 'revision': revision, 'status': job.get('status', 'queued')})
 
 
+def handle_memory_export_history(event, owner):
+    """List prior private PDF jobs without exposing S3 object keys or other owners."""
+    book_id = (event.get('pathParameters') or {}).get('book_id', '')
+    if not UUID_RE.fullmatch(book_id):
+        return respond(400, {'error': 'Invalid book ID'})
+    if not memory_book_is_active(owner, book_id):
+        return respond(404, {'error': 'Memory book not found'})
+    items, cursor = [], None
+    for _ in range(40):
+        query = {'IndexName': 'userId-createdAt-index',
+                 'KeyConditionExpression': Key('userId').eq(f'memory-book#{owner}'),
+                 'ScanIndexForward': False, 'Limit': 100}
+        if cursor:
+            query['ExclusiveStartKey'] = cursor
+        page = table.query(**query)
+        for item in page.get('Items', []):
+            if (item.get('recordType') == 'memory-export' and item.get('bookId') == book_id and
+                    item.get('userId') == f'memory-book#{owner}'):
+                items.append({'revision': int(item.get('revision', 0)),
+                              'status': item.get('status', 'unknown'),
+                              'created_at': item.get('createdAt', '')})
+        cursor = page.get('LastEvaluatedKey')
+        if not cursor or len(items) >= 50:
+            break
+    items.sort(key=lambda item: (item['revision'], item['created_at']), reverse=True)
+    return respond(200, {'exports': items[:50]})
+
+
 def handle_memory_export_status(event, owner):
     path = event.get('pathParameters') or {}
     book_id, raw_revision = path.get('book_id', ''), path.get('revision', '')
@@ -2383,6 +2418,8 @@ def handler(event, context):
         return handle_delete_memory_book(event, owner)
     if route == 'POST /memory-books/{book_id}/exports':
         return handle_memory_export(event, owner)
+    if route == 'GET /memory-books/{book_id}/exports':
+        return handle_memory_export_history(event, owner)
     if route == 'GET /memory-books/{book_id}/exports/{revision}':
         return handle_memory_export_status(event, owner)
     if route == 'POST /memory-books/{book_id}/exports/{revision}/retry':

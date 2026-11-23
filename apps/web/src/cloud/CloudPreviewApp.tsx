@@ -63,7 +63,16 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
     });
   });
   const videoUrls = new Map<string, string>();
+  const previewCollectionKey = "reverie-daily-collections-v1:local-cloud-preview";
   const memoryBooks = new Map<string, import("./analysisApi").MemoryBookRecord>();
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(previewCollectionKey) || "[]") as import("./analysisApi").MemoryBookRecord[];
+    if (Array.isArray(stored)) stored.forEach(book => { if (book?.id && book.contentMode === "journal-pages") memoryBooks.set(book.id, book); });
+  } catch { /* If browser storage is unavailable, keep preview state in memory. */ }
+  const persistCollections = () => {
+    try { window.localStorage.setItem(previewCollectionKey, JSON.stringify([...memoryBooks.values()].filter(book => book.contentMode === "journal-pages"))); }
+    catch { /* Browser storage can be disabled; interactive preview still works. */ }
+  };
   const journalPages = new Map<string, import("./analysisApi").JournalPage>();
   const dailyPages = new Map<string, import("./analysisApi").JournalPage>();
   const previewPhotos: import("./analysisApi").MemoryPhoto[] = [];
@@ -215,11 +224,12 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
           const previous = memoryBooks.get(book.id);
           if ((previous?.revision ?? 0) !== book.revision) throw new Error("This book changed elsewhere. Reload before saving.");
           const saved = { ...structuredClone(book), revision: book.revision + 1 };
-          memoryBooks.set(book.id, saved); return structuredClone(saved);
+          memoryBooks.set(book.id, saved); persistCollections(); return structuredClone(saved);
         },
-        async deleteMemoryBook(_token, bookId) { memoryBooks.delete(bookId); },
+        async deleteMemoryBook(_token, bookId) { memoryBooks.delete(bookId); persistCollections(); },
         async startMemoryExport(_token, bookId) { return { book_id: bookId, revision: memoryBooks.get(bookId)?.revision ?? 0, status: "preview" }; },
         async fetchMemoryExport() { return { status: "preview" }; },
+        async fetchMemoryExportHistory() { return []; },
         async retryMemoryExport(_token, bookId, revision) { return { book_id: bookId, revision, status: "preview" }; },
         async rewriteMemory(_token, _bookId, uploadId, style, amount) {
           const source = entries.get(uploadId)?.transcript ?? "";
@@ -233,7 +243,23 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
             sourceIds: source.map(entry => entry.id), coverage: { journal_count: source.length, start_date: source[0]!.date.slice(0,10), end_date: source[source.length-1]!.date.slice(0,10), source_characters: source.reduce((sum,entry)=>sum+entry.text.length,0) }, aiGenerated: true, approved: false, included: true };
         },
         async fetchMemoryPhotos() { return structuredClone(previewPhotos); },
-        async uploadMemoryPhoto() { const photo_id = crypto.randomUUID(); previewPhotos.push({ photo_id, status: "complete", url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='500'%3E%3Crect width='100%25' height='100%25' fill='%23e9dfd2'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' fill='%23715c4b' font-size='32'%3EPreview photo%3C/text%3E%3C/svg%3E" }); return photo_id; },
+        async uploadMemoryPhoto(_token, blob) {
+          if (!blob.type.startsWith("image/")) throw new Error("Select a photo to preview.");
+          const url = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(new Error("Unable to read this photo."));
+            reader.readAsDataURL(blob);
+          });
+          const photo_id = crypto.randomUUID();
+          previewPhotos.push({ photo_id, status: "complete", url });
+          return photo_id;
+        },
+        async fetchMemoryPhoto(_token, photoId) {
+          const photo = previewPhotos.find(item => item.photo_id === photoId);
+          if (!photo) throw new Error("Photo not found");
+          return structuredClone(photo);
+        },
         async fetchJournals() {
           return { journals: Array.from(entries.values()).map(entry => ({
             upload_id: entry.upload_id, title: entry.title, created_at: entry.created_at,

@@ -93,7 +93,7 @@ def test_daily_page_revision_saves_notes_and_checks_stale_writes():
     api.table.get_item.return_value = {}
     blocks = source_blocks()
     note = {'id': 'private-note-1', 'kind': 'text', 'width': 'half',
-            'text': 'A small added note.', 'highlight': 'small', 'widthPercent': 60, 'style': 'note'}
+            'text': 'A small added note.', 'highlight': 'small', 'widthPercent': 60, 'style': 'note', 'name': 'Private note', 'layer': 1}
     event = {'queryStringParameters': {'timezone': 'UTC'},
              'body': json.dumps({'revision': 0, 'highlightPage': True, 'blocks': blocks + [note]})}
     with patch.object(api, 'journal_day_sources', return_value=ROWS), \
@@ -108,6 +108,7 @@ def test_daily_page_revision_saves_notes_and_checks_stale_writes():
         assert version['revision'] == 1 and version['highlightPage'] is True
         assert version['blocks'][-1]['highlight'] == 'small'
         assert version['blocks'][-1]['widthPercent'] == 60
+        assert version['blocks'][-1]['name'] == 'Private note' and version['blocks'][-1]['layer'] == 1
         assert all('text' not in block for block in version['blocks'] if block.get('source'))
         assert len(version['sources']) == 2
         api.table.get_item.return_value = {'Item': {
@@ -136,6 +137,21 @@ def test_export_pins_the_daily_revision_and_groups_recordings():
     assert snapshot['entries'] == entries
 
 
+def test_optional_layer_names_survive_validation_and_locked_transcript_text_stays_exact():
+    source = {**source_blocks()[0], 'name': 'Morning transcript', 'layer': 3, 'x': 94, 'y': -105}
+    note = {'id': 'new-note', 'kind': 'text', 'width': 'wide', 'text': 'Some private words', 'name': 'My first note', 'layer': 1}
+    photo = {'id': 'new-image', 'kind': 'image', 'width': 'half', 'photoId': FIRST_ID, 'name': 'A happy memory', 'layer': 2}
+    mapping = {(source['id'], source['sourceJournalId']): source['text']}
+    with patch.object(api, 'valid_memory_photo', return_value=True):
+        blocks, error = api.validate_journal_page_blocks([source, note, photo], OWNER, '', mapping)
+    assert error is None
+    assert [block['layer'] for block in blocks] == [3, 1, 2]
+    assert [block['name'] for block in blocks] == ['Morning transcript', 'My first note', 'A happy memory']
+    assert blocks[0]['text'] == source['text']
+    for bad in ({**note, 'name': 'bad\nname'}, {**note, 'layer': 0}, {**note, 'layer': 501}):
+        assert api.validate_journal_page_blocks([bad], OWNER, '')[0] is None
+
+
 def test_legacy_journal_page_delete_cleans_pointer_and_versions():
     api.table = MagicMock()
     pointer = {'userId': f'memory-book#{OWNER}', 'recordType': 'journal-page-latest',
@@ -154,5 +170,6 @@ if __name__ == '__main__':
     test_daily_page_revision_saves_notes_and_checks_stale_writes()
     test_export_pins_the_daily_revision_and_groups_recordings()
     test_legacy_journal_page_delete_cleans_pointer_and_versions()
+    test_optional_layer_names_survive_validation_and_locked_transcript_text_stays_exact()
     print('PASS daily source preservation, tamper rejection, photo ownership, and immutable revisions')
     print('PASS date-range daily PDF revision pinning and legacy journal-page cleanup')

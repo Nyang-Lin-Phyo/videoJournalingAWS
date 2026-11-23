@@ -67,8 +67,8 @@ export type JournalSummary = {
   page_available?: boolean;
 };
 export type JournalPageBlock =
-  | { id: string; kind: "text"; width: "full" | "wide" | "half"; widthPercent?: number; heightMm?: number; text: string; style?: "paragraph" | "note"; highlight?: string; source?: boolean; sourceJournalId?: string; x?: number; y?: number; rotation?: number; fontSize?: number }
-  | { id: string; kind: "image"; width: "full" | "wide" | "half"; widthPercent?: number; heightMm?: number; photoId: string; caption?: string; highlight?: boolean; x?: number; y?: number; rotation?: number };
+  | { id: string; kind: "text"; name?: string; layer?: number; width: "full" | "wide" | "half"; widthPercent?: number; heightMm?: number; text: string; style?: "paragraph" | "note"; highlight?: string; source?: boolean; sourceJournalId?: string; x?: number; y?: number; rotation?: number; fontSize?: number }
+  | { id: string; kind: "image"; name?: string; layer?: number; width: "full" | "wide" | "half"; widthPercent?: number; heightMm?: number; photoId: string; caption?: string; highlight?: boolean; x?: number; y?: number; rotation?: number };
 export type JournalPage = { journalId: string; dayKey?: string; timezone?: string; sources?: { id: string; title: string; date: string }[]; title: string; date: string; revision: number; blocks: JournalPageBlock[]; highlightPage: boolean; originalText?: string };
 export async function fetchJournalPage(token: string, journalId: string): Promise<JournalPage> {
   const response = await fetch(`${base()}/journals/${encodeURIComponent(journalId)}/page`, { headers: headers(token), cache: "no-store" });
@@ -121,6 +121,12 @@ export async function fetchMemoryPhotos(token: string): Promise<MemoryPhoto[]> {
   const value = await response.json() as { photos?: MemoryPhoto[] };
   if (!Array.isArray(value.photos)) throw new Error("Invalid photo response.");
   return value.photos;
+}
+export async function fetchMemoryPhoto(token: string, photoId: string): Promise<MemoryPhoto> {
+  const response = await fetch(`${base()}/memory-photos/${encodeURIComponent(photoId)}`, { headers: headers(token), cache: "no-store" });
+  const value = await response.json() as MemoryPhoto & { error?: string };
+  if (!response.ok) throw new Error(value.error || `Unable to open private photo (HTTP ${response.status}).`);
+  return value;
 }
 export async function uploadMemoryPhoto(token: string, file: File | Blob): Promise<string> {
   if (file.size < 1 || file.size > 5 * 1024 * 1024) throw new Error("Choose an image up to 5 MiB.");
@@ -204,6 +210,13 @@ export async function startMemoryExport(token: string, bookId: string): Promise<
   const value = await response.json() as { error?: string; book_id?: string; revision?: number; status?: string };
   if (!response.ok) throw new Error(value.error || `Unable to start PDF export (HTTP ${response.status}).`);
   return value as { book_id: string; revision: number; status: string };
+}
+export type MemoryExportHistoryItem = { revision: number; status: string; created_at: string };
+export async function fetchMemoryExportHistory(token: string, bookId: string): Promise<MemoryExportHistoryItem[]> {
+  const response = await fetch(`${base()}/memory-books/${encodeURIComponent(bookId)}/exports`, { headers: headers(token), cache: "no-store" });
+  const value = await response.json() as { exports?: MemoryExportHistoryItem[]; error?: string };
+  if (!response.ok || !Array.isArray(value.exports)) throw new Error(value.error || "Unable to load saved PDF history.");
+  return value.exports;
 }
 export async function fetchMemoryExport(token: string, bookId: string, revision: number): Promise<{ status: string; download_url?: string }> {
   const response = await fetch(`${base()}/memory-books/${encodeURIComponent(bookId)}/exports/${revision}`, { headers: headers(token), cache: "no-store" });

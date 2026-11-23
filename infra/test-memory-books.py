@@ -93,6 +93,23 @@ assert retried_delete['statusCode']==200 and api.table.update_item.call_count==1
 assert api.s3.list_object_versions.call_args.kwargs['Prefix']==f'exports/{owner}/{book_id}/'
 assert "'Action':'s3:PutObject','Resource':f'arn:aws:s3:::{sys.argv[4]}/uploads/*/memory-photos/*'" in routes
 assert "'Action':'s3:ListBucketVersions'" in routes and "'s3:DeleteObjectVersion'" in routes
+# Saved PDF listings are per owner/book and never expose raw private S3 object keys.
+api.table = MagicMock()
+api.table.get_item.return_value = {'Item': {'userId': f'memory-book#{owner}', 'recordType': 'memory-book', 'book': book}}
+api.table.query.return_value = {'Items': [
+    {'userId': f'memory-book#{owner}', 'recordType': 'memory-export', 'bookId': book_id, 'revision': 2, 'status': 'complete', 'createdAt': '2026-11-22T01:00:00Z', 'objectKey': 'private/key.pdf'},
+    {'userId': f'memory-book#{owner}', 'recordType': 'memory-export', 'bookId': 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'revision': 4, 'status': 'complete'},
+    {'userId': f'memory-book#other', 'recordType': 'memory-export', 'bookId': book_id, 'revision': 9, 'status': 'complete'},
+], 'LastEvaluatedKey': None}
+listing = api.handle_memory_export_history({'pathParameters': {'book_id': book_id}}, owner)
+assert listing['statusCode'] == 200
+assert json.loads(listing['body'])['exports'] == [{'revision': 2, 'status': 'complete', 'created_at': '2026-11-22T01:00:00Z'}]
+assert api.table.query.call_args.kwargs['KeyConditionExpression'].get_expression()['values'][1] == f'memory-book#{owner}'
+api.table.get_item.return_value = {'Item': {'userId': 'memory-book#other', 'recordType': 'memory-book', 'book': book}}
+api.table.query.reset_mock()
+assert api.handle_memory_export_history({'pathParameters': {'book_id': book_id}}, owner)['statusCode'] == 404
+assert not api.table.query.called
+assert 'GET /memory-books/{book_id}/exports' in routes and 'GET /memory-books/{book_id}/exports' in dispatch
 print('PASS namespaced owner query, revision conflicts, empty Dynamo values, and approval gate')
 print('PASS failed PDF retries stay bound to the original owner, book, revision snapshot, and JWT route')
 print('PASS owner-scoped deletion tombstone, deterministic job cleanup, and private export-prefix sweep')

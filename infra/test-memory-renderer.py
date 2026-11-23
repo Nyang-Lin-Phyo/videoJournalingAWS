@@ -131,6 +131,22 @@ class ExportSnapshotTests(unittest.TestCase):
         for number in range(120):
             self.assertIn(f'Paragraph {number}:', rendered)
 
+    def test_render_respects_z_order_independent_of_block_text_order(self):
+        book = {'contentMode': 'journal-pages', 'includeHighlights': False}
+        pages = [{'journalId': 'a', 'title': 'Layer test', 'date': '2026-11-20T12:00:00Z',
+                  'blocks': [{'id': 'behind', 'kind': 'text', 'width': 'half', 'name': 'Behind layer',
+                              'text': 'Bottom block text', 'layer': 3, 'x': 12, 'y': 20},
+                             {'id': 'front', 'kind': 'text', 'width': 'half', 'name': 'Front layer',
+                              'text': 'Top block text', 'layer': 1, 'x': -15, 'y': -32}]}]
+        rendered = worker.render_journal_pages_html(book, pages, {})
+        self.assertLess(rendered.index('Bottom block text'), rendered.index('Top block text'))
+        self.assertIn('z-index:597', rendered)
+        self.assertIn('z-index:599', rendered)
+        self.assertLess(rendered.index('z-index:597'), rendered.index('z-index:599'))
+        # Layer handles are editing metadata, not words added to the printed transcript.
+        self.assertNotIn('Behind layer', rendered)
+        self.assertNotIn('Front layer', rendered)
+
     def test_worker_resolves_pinned_page_revision_after_a_later_edit(self):
         owner, upload_id = 'page-owner', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
         source_key = f'transcripts/{owner}/{upload_id}.txt'
