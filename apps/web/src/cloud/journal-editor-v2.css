@@ -5,6 +5,7 @@
 .journal-editor-workspace .journal-design-canvas { overflow: hidden; }
 .journal-editor-canvas-area { position: relative; min-height: 220mm; padding: 8px 6px 32px; }
 .journal-design-block { cursor: grab; touch-action: none; transition: none !important; user-select: none; }
+.journal-design-block.is-text-editing { touch-action: auto; }
 .journal-design-block:active { cursor: grabbing; }
 .journal-design-block textarea, .journal-design-block input { touch-action: auto; user-select: text; cursor: text; }
 .journal-design-block .journal-transcript-source { user-select: none; }
@@ -78,6 +79,7 @@
   display: block; width: 100%; height: auto; min-height: 72px; max-height: none;
   overflow: hidden !important; overflow-y: hidden !important;
   resize: none !important; scrollbar-width: none; line-height: 1.6;
+  pointer-events: auto;
 }
 .journal-design-block > textarea::-webkit-scrollbar { display: none; }
 .journal-scrub-field { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
@@ -149,12 +151,11 @@
 /* The note's paper tint belongs to the entire selected box, not a nested input. */
 .journal-design-block.is-note > textarea.journal-editable-paragraph { background: transparent; }
 
-/* Studio v5: click-and-drag to move; double-click to enter native text editing.
-   While not editing, the textarea yields pointer events to the movable frame. */
+/* Text fields accept a first click to enter edit mode. The frame area stays draggable. */
 .journal-design-block > textarea.journal-editable-paragraph[readonly] {
-  pointer-events: none;
+  pointer-events: auto;
   user-select: none;
-  cursor: grab;
+  cursor: text;
 }
 .journal-design-block.is-text-editing { cursor: text; touch-action: auto; }
 .journal-design-block.is-text-editing > textarea.journal-editable-paragraph {

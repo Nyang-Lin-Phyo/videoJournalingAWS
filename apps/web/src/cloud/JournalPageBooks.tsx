@@ -299,7 +299,17 @@ export function JournalPageBooks({ onLegacy }: { onLegacy: () => void }) {
       const job = await services.startMemoryExport(accessToken, saved.id);
       setExportRevision(job.revision); setExportStatus(job.status); setExportUrl("");
       setExportHistory(current => [{ revision: job.revision, status: job.status, created_at: new Date().toISOString() }, ...current.filter(item => item.revision !== job.revision)]);
-      setNotice(`PDF export ${job.status}. You can leave and return to this collection later.`);
+      // A fast export can already be complete when the start request returns.
+      // Fetch once immediately so terminal jobs still reveal their download link.
+      const result = await services.fetchMemoryExport(accessToken, saved.id, job.revision);
+      setExportStatus(result.status);
+      setExportHistory(current => current.map(item => item.revision === job.revision ? { ...item, status: result.status } : item));
+      if (result.download_url) {
+        setExportUrl(result.download_url);
+        setNotice("PDF is ready. Use the Download PDF link below.");
+      } else {
+        setNotice(`PDF export ${result.status}. You can leave and return to this collection later.`);
+      }
     }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to start PDF export."); }
     finally { setBusy(false); }
