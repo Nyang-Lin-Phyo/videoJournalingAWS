@@ -82,6 +82,7 @@ function ScrubField({ label, value, min, max, unit, onChange, onReset }: {
 export function JournalPageEditor({ dayKey, timezone, onBack }: { dayKey: string; timezone: string; onBack: () => void }) {
   const { accessToken, services, isPreview } = useCloudEnvironment();
   const [page, setPage] = useState<JournalPage | null>(null);
+  const savedPage = useRef<JournalPage | null>(null);
   const [photos, setPhotos] = useState<MemoryPhoto[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -112,7 +113,9 @@ export function JournalPageEditor({ dayKey, timezone, onBack }: { dayKey: string
         const normalized = loaded.blocks.some(block => block.kind === "text" && block.id.startsWith("source-"))
           ? { ...loaded, blocks: loaded.blocks.map(block => block.kind === "text" && block.id.startsWith("source-") ? { ...block, source: true } : block) }
           : loaded;
-        setPage({ ...normalized, blocks: normalizeLayers(normalized.blocks) }); setPhotos(library); retryPhotos.current.clear(); setError("");
+        const ready = { ...normalized, blocks: normalizeLayers(normalized.blocks) };
+        savedPage.current = structuredClone(ready);
+        setPage(ready); setPhotos(library); retryPhotos.current.clear(); setError("");
       })
       .catch(e => { if (live) setError(e instanceof Error ? e.message : "Unable to load this page."); });
     return () => { live = false; };
@@ -394,6 +397,7 @@ export function JournalPageEditor({ dayKey, timezone, onBack }: { dayKey: string
     setBusy(true); setError(""); setNotice("");
     try {
       const saved = await services.saveDailyPage(accessToken, dayKey, timezone, { revision: pageSnapshot.revision, blocks: pageSnapshot.blocks, highlightPage: pageSnapshot.highlightPage });
+      savedPage.current = structuredClone(saved);
       setPage(saved); setNotice("Page saved.");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save this page."); }
     finally { setBusy(false); }
@@ -442,12 +446,18 @@ export function JournalPageEditor({ dayKey, timezone, onBack }: { dayKey: string
     setSelectedId(id);
     setEditingId(id); // Inserting a blank box should let the user type immediately.
   }
+  function resetPage() {
+    if (!savedPage.current) return;
+    setPage(structuredClone(savedPage.current));
+    setSelectedId(null); setEditingId(null); setSelection(null);
+    setNotice("Page reset to its last saved state."); setError("");
+  }
 
   return <section className="journal-page-editor">
     <div className="journal-editor-top"><button type="button" className="button button-secondary" onClick={onBack}>← Journal history</button><span>DAY {page.revision ? `REVISION ${page.revision}` : "DRAFT"}</span><button type="button" className="button button-secondary" disabled={busy || uploading} onClick={() => setReloadKey(value => value + 1)}>Refresh recordings</button></div>
     <div className="journal-editor-heading"><p className="eyebrow">YOUR DAILY PAGE</p><h1>{new Date(page.date).toLocaleDateString(undefined, { dateStyle: "long", timeZone: timezone })}</h1><p>{page.sources?.length ?? 0} recording{page.sources?.length === 1 ? "" : "s"} combined · Original transcript wording is locked, but you can arrange its box.</p>{!!page.sources?.length && <ul className="journal-day-sources">{page.sources.map(source => <li key={source.id}>{source.title} <time>{new Date(source.date).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZone: timezone })}</time></li>)}</ul>}</div>
-    <div className="journal-editor-actions"><label><input type="checkbox" checked={page.highlightPage} disabled={busy} onChange={e => setPage({ ...page, highlightPage: e.target.checked })}/> Highlight this page</label><label className="button button-secondary journal-photo-add">{uploading ? "Uploading photo…" : "+ Add private photo"}<input aria-label="Add a private photo" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading || busy} onChange={e => { void addPhoto(e.target.files?.[0]); e.currentTarget.value = ""; }}/></label><button type="button" className="button button-primary" disabled={busy || uploading} onClick={() => void save()}>{busy ? "Saving…" : "Save page"}</button></div>
-    <p className="journal-canvas-hint">Click and drag a box to move it. Double-click an added text box to edit its words; click outside to move it again. Use the corner handles to resize and the round handle to rotate. Original recordings stay locked.</p>
+    <div className="journal-editor-actions"><label><input type="checkbox" checked={page.highlightPage} disabled={busy} onChange={e => setPage({ ...page, highlightPage: e.target.checked })}/> Highlight this page</label><label className="button button-secondary journal-photo-add">{uploading ? "Uploading photo…" : "+ Add private photo"}<input aria-label="Add a private photo" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading || busy} onChange={e => { void addPhoto(e.target.files?.[0]); e.currentTarget.value = ""; }}/></label><button type="button" className="button button-secondary" disabled={busy || uploading} onClick={resetPage}>Reset page</button><button type="button" className="button button-primary" disabled={busy || uploading} onClick={() => void save()}>{busy ? "Saving…" : "Save page"}</button></div>
+    <p className="journal-canvas-hint">Click a text box to edit its words. Drag the surrounding frame area to move it. Use the corner handles to resize and the round handle to rotate. Original recordings stay locked.</p>
     {error && <p className="journal-editor-error" role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     {layerOverlay && typeof document !== "undefined" && createPortal(
       <div className={`journal-layer-floating ${layerOverlay.settling ? "is-settling" : ""}`} aria-hidden="true"
@@ -482,9 +492,12 @@ export function JournalPageEditor({ dayKey, timezone, onBack }: { dayKey: string
                   onFocus={() => setSelectedId(block.id)}
                   onKeyDown={e => { if (busy || e.target !== e.currentTarget) return; if (e.key === "Enter" && block.kind === "text" && !block.source) { e.preventDefault(); setEditingId(block.id); return; } const step = e.shiftKey ? 5 : 1; const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0; const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0; if (dx || dy) { e.preventDefault(); update(block.id, value => ({ ...value, x: clamp((value.x ?? 0) + dx, -X_LIMIT, X_LIMIT), y: clamp((value.y ?? 0) + dy, -Y_LIMIT, Y_LIMIT) })); } }}
                   onPointerDown={e => {
-                    // In edit mode the textarea gets all text-selection gestures. Outside
-                    // edit mode even clicking the displayed text may start a drag.
+                    // Text boxes enter edit mode on the first click; the surrounding
+                    // frame area remains available for dragging.
                     if (editingId === block.id) return;
+                    if ((e.target as HTMLElement).closest("textarea.journal-editable-paragraph")) {
+                      setSelectedId(block.id); setEditingId(block.id); return;
+                    }
                     if (!(e.target as HTMLElement).closest("input, button, select, label")) startGesture(block.id, "move", e);
                   }}
                   onPointerMove={updateGesture} onPointerUp={endGesture} onPointerCancel={endGesture}>
