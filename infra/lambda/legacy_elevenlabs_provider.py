@@ -175,8 +175,11 @@ def load_key(secret_id, json_field):
     return raw.strip()
 
 
-def multipart_body(video):
+def multipart_body(video, content_type="video/mp4"):
     """Build a small bounded multipart payload for ElevenLabs (max 30 MiB)."""
+    if content_type not in ('video/mp4', 'video/webm'):
+        raise ValueError('Unsupported transcription video type')
+    extension = content_type.split('/')[1]
     boundary = "----Reverie" + uuid.uuid4().hex
     parts = []
     def field(name, value):
@@ -186,16 +189,16 @@ def multipart_body(video):
     field("model_id", ELEVENLABS_MODEL)
     field("tag_audio_events", "false")
     parts.append((
-        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="journal.mp4"\r\n'
-        'Content-Type: video/mp4\r\n\r\n'
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="journal.{extension}"\r\n'
+        f'Content-Type: {content_type}\r\n\r\n'
     ).encode())
     parts.append(video)
     parts.append(f"\r\n--{boundary}--\r\n".encode())
     return b"".join(parts), boundary
 
 
-def transcribe_mp4(video):
-    body, boundary = multipart_body(video)
+def transcribe_video(video, content_type="video/mp4"):
+    body, boundary = multipart_body(video, content_type)
     req = Request(
         "https://api.elevenlabs.io/v1/speech-to-text",
         data=body,
@@ -329,6 +332,11 @@ def analyze_transcript(transcript, profile_context=None):
             LOG.warning("Temporary Gemini failure (%s); retry %d of %d in %.1fs",
                         str(exc), attempt + 1, len(_GEMINI_RETRY_DELAYS), delay)
             time.sleep(delay)
+
+
+def transcribe_mp4(video):
+    """Legacy MP4 entrypoint used by the existing demo and worker tests."""
+    return transcribe_video(video, "video/mp4")
 
 
 def process_one(bucket, key):

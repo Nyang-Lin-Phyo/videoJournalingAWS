@@ -655,14 +655,14 @@ def handle_video_url(upload_id, owner):
     if not row or row.get('status') == 'deleting':
         return respond(404, {'error': 'Journal not found'})
     key = row.get('videoKey')
-    allowed = {f'uploads/{owner}/{upload_id}.mp4', f'uploads/{upload_id}.mp4'}
+    allowed = {f'uploads/{owner}/{upload_id}.{ext}' for ext in ('mp4', 'webm')} | {f'uploads/{upload_id}.mp4'}
     if not isinstance(key, str) or key not in allowed:
         return respond(409, {'error': 'Video not available'})
     if row.get('status') == 'awaiting_upload':
         return respond(409, {'error': 'Video not uploaded yet'})
     url = s3.generate_presigned_url(
         ClientMethod='get_object',
-        Params={'Bucket': BUCKET, 'Key': key, 'ResponseContentType': 'video/mp4'},
+        Params={'Bucket': BUCKET, 'Key': key, 'ResponseContentType': 'video/webm' if key.endswith('.webm') else 'video/mp4'},
         ExpiresIn=900,
     )
     return respond(200, {'upload_id': upload_id, 'url': url, 'expires_in': 900})
@@ -707,7 +707,7 @@ def s3_keys_for(row, upload_id, owner):
     keys = {f'results/{upload_id}.json', f'transcripts/{owner}/{upload_id}.txt',
             f'transcripts/{upload_id}.txt'}
     video_key = row.get('videoKey')
-    if video_key in (f'uploads/{owner}/{upload_id}.mp4', f'uploads/{upload_id}.mp4'):
+    if video_key in ({f'uploads/{owner}/{upload_id}.{ext}' for ext in ('mp4', 'webm')} | {f'uploads/{upload_id}.mp4'}):
         keys.add(video_key)
     transcript_key = row.get('transcriptKey')
     if transcript_key in (f'transcripts/{owner}/{upload_id}.txt', f'transcripts/{upload_id}.txt'):

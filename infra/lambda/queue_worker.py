@@ -24,7 +24,7 @@ STREAK_KEY_PREFIX = 'streak#'
 STREAK_AWARD_HISTORY_DAYS = 366
 STREAK_UPDATE_ATTEMPTS = 5
 STREAK_START_AT = os.environ.get('STREAK_START_AT')
-KEY_RE = re.compile(r'^uploads/([A-Za-z0-9_-]{1,128})/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\.mp4$')
+KEY_RE = re.compile(r'^uploads/([A-Za-z0-9_-]{1,128})/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\.(mp4|webm)$')
 # Optional until the profile backend is deployed; personalization is skipped without it.
 USERS_TABLE = os.environ.get('USERS_TABLE')
 PROFILE_UPDATE_ATTEMPTS = 3
@@ -284,12 +284,17 @@ def get_transcript(item, upload_id, owner, video_key):
             raise
     metadata = s3.head_object(Bucket=BUCKET, Key=video_key)
     size = metadata['ContentLength']
-    if not (0 < size <= MAX_BYTES) or not metadata.get('ContentType','').lower().startswith('video/mp4'):
-        raise ValueError('Invalid MP4 size or MIME type')
+    extension = video_key.rsplit('.', 1)[-1]
+    mime = {'mp4': 'video/mp4', 'webm': 'video/webm'}.get(extension)
+    if not mime or not (0 < size <= MAX_BYTES) or metadata.get('ContentType', '').lower() != mime:
+        raise ValueError('Invalid video size or MIME type')
     data = s3.get_object(Bucket=BUCKET, Key=video_key)['Body'].read(MAX_BYTES+1)
-    if len(data) != size or len(data) < 12 or data[4:8] != b'ftyp':
-        raise ValueError('Invalid MP4 content')
-    transcript = provider.transcribe_mp4(data)
+    if len(data) != size or (
+        (mime == 'video/mp4' and (len(data) < 12 or data[4:8] != b'ftyp')) or
+        (mime == 'video/webm' and (not data.startswith(b'\x1a\x45\xdf\xa3') or b'webm' not in data[:256].lower()))
+    ):
+        raise ValueError('Invalid video content')
+    transcript = provider.transcribe_mp4(data) if mime == 'video/mp4' else provider.transcribe_video(data, mime)
     s3.put_object(Bucket=BUCKET, Key=transcript_key,
                   Body=transcript.encode('utf-8'),ContentType='text/plain; charset=utf-8')
     return transcript, transcript_key
@@ -299,7 +304,7 @@ def process_object(bucket, key, event_time=None):
     if bucket != BUCKET or not match:
         LOG.info('Skipping unrelated S3 event')
         return
-    owner, upload_id = match.groups()
+    owner, upload_id, _extension = match.groups()
     row = table.get_item(Key={'uploadId':upload_id},ConsistentRead=True).get('Item')
     # Unknown/old anonymous uploads intentionally are not processed in v3.
     if not row or row.get('userId') != owner or row.get('videoKey') != key:

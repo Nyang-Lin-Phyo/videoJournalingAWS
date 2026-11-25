@@ -28,8 +28,8 @@ export function VideoPreview({
           </h3>
           <p>
             {demo
-              ? "This synthetic entry has no recording. Upload an MP4 to try playback in this session."
-              : "Choose an MP4 to preview it before uploading."}
+              ? "This synthetic entry has no recording. Choose or record a video to try playback in this session."
+              : "Choose or record a video to preview it before uploading."}
           </p>
         </div>
       )}

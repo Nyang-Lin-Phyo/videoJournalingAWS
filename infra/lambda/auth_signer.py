@@ -47,11 +47,13 @@ def handler(event, context):
     title = raw_title.strip()
     if not 1 <= len(title) <= 100 or any(ord(ch) < 32 or ord(ch) == 127 for ch in title):
         return respond(400, {'error':'Title must contain 1-100 visible characters'})
-    if not (isinstance(filename,str) and filename.lower().endswith('.mp4') and len(filename) <= 255
-            and mime == 'video/mp4' and type(size) is int and 1 <= size <= MAX_BYTES):
-        return respond(400, {'error':'Only MP4 files up to 30 MiB are allowed'})
+    ext_by_mime = {'video/mp4': '.mp4', 'video/webm': '.webm'}
+    extension = ext_by_mime.get(mime) if isinstance(mime, str) else None
+    if not (isinstance(filename, str) and extension and filename.lower().endswith(extension)
+            and len(filename) <= 255 and type(size) is int and 1 <= size <= MAX_BYTES):
+        return respond(400, {'error':'Only MP4 or WebM videos up to 30 MiB are allowed'})
     upload_id = str(uuid4())
-    key = f'uploads/{sub}/{upload_id}.mp4'
+    key = f'uploads/{sub}/{upload_id}{extension}'
     now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')
     item = {'uploadId': upload_id, 'userId': sub, 'createdAt': now,
             'userCreatedAt': f'{now}#{upload_id}', 'videoKey': key,
@@ -88,8 +90,8 @@ def handler(event, context):
     try:
         signed = s3.generate_presigned_post(
             Bucket=BUCKET, Key=key,
-            Fields={'Content-Type':'video/mp4'},
-            Conditions=[{'Content-Type':'video/mp4'}, ['content-length-range', 1, MAX_BYTES+16*1024]],
+            Fields={'Content-Type':mime},
+            Conditions=[{'Content-Type':mime}, ['content-length-range', 1, MAX_BYTES+16*1024]],
             ExpiresIn=300)
     except Exception:
         # Compensation if signing fails, so the journal does not remain orphaned.

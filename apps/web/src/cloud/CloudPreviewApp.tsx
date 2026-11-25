@@ -340,7 +340,7 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
             analysis: { sentiment: "neutral", emotions: ["calm"], themes: ["reflection"],
               summary: "Fictional preview reflection. Your video has not been analyzed." }, error: null });
           onProgress(100);
-          return { upload_id: id, object_key: `preview/${id}.mp4` };
+          return { upload_id: id, object_key: `preview/${id}.${file.name.toLowerCase().endsWith(".webm") ? "webm" : "mp4"}` };
         },
         async fetchStreak() {
           return refreshStreakSummary();

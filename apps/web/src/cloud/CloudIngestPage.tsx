@@ -8,6 +8,7 @@ import type { AnalysisResult } from "./analysisApi";
 import { useCloudEnvironment } from "./CloudEnvironment";
 import { ReflectionPanel } from "./ReflectionPanel";
 import { TranscriptPanel } from "../components/TranscriptPanel";
+import { RecordVideoDialog } from "./RecordVideoDialog";
 
 type Result = {
   upload_id: string;
@@ -47,6 +48,7 @@ export function CloudIngestPage({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [recordDialogOpen, setRecordDialogOpen] = useState(false);
   const [stage, setStage] =
     useState<"signing" | "uploading" | null>(null);
   const [progress, setProgress] = useState(0);
@@ -251,7 +253,7 @@ export function CloudIngestPage({
         <h1>A moment for you.</h1>
         <p>
           Save a moment and come back to it whenever you like.
-          Choose a short MP4 video to begin.
+          Choose a short video or record one to begin.
         </p>
       </div>
 
@@ -266,7 +268,7 @@ export function CloudIngestPage({
               <h2 id="cloud-upload-heading">
                 Choose your video
               </h2>
-              <p>An MP4, up to 30 MiB.</p>
+              <p>MP4 or WebM, up to 30 MiB.</p>
             </div>
           </div>
 
@@ -300,20 +302,32 @@ export function CloudIngestPage({
 
             <p>or choose a file from your device</p>
 
-            <button
-              className="button button-secondary"
-              disabled={!!stage}
-              onClick={() => input.current?.click()}
-            >
-              {file ? "Change video" : "Choose MP4 video"}
-            </button>
+            <div className="upload-choice-actions">
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={!!stage}
+                onClick={() => input.current?.click()}
+              >
+                {file ? "Change video" : "Choose video"}
+              </button>
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={!!stage}
+                aria-haspopup="dialog"
+                onClick={() => setRecordDialogOpen(true)}
+              >
+                <Icon name="video" size={17} /> Record a video
+              </button>
+            </div>
 
             <input
               ref={input}
               className="visually-hidden"
               type="file"
-              accept=".mp4,video/mp4"
-              aria-label="Choose MP4 video"
+              accept=".mp4,.webm,video/mp4,video/webm"
+              aria-label="Choose video"
               disabled={!!stage}
               onChange={(e) => {
                 selectFile(e.target.files?.[0]);
@@ -331,7 +345,7 @@ export function CloudIngestPage({
               <div>
                 <strong>{file.name}</strong>
                 <span>
-                  {fileSize(file.size)} · Original video
+                  {fileSize(file.size)} · {file.name.startsWith("reverie-recording-") ? "Recorded video" : "Selected video"}
                 </span>
               </div>
 
@@ -447,8 +461,8 @@ export function CloudIngestPage({
               <li>
                 <span>1</span>
                 <div>
-                  <strong>Choose a test video</strong>
-                  <p>Pick an MP4 under 30 MiB.</p>
+                  <strong>Choose or record a video</strong>
+                  <p>Choose an MP4 or WebM under 30 MiB, or record in your browser.</p>
                 </div>
               </li>
 
@@ -477,6 +491,16 @@ export function CloudIngestPage({
           </div>
         </aside>
       </div>
+
+      {recordDialogOpen && (
+        <RecordVideoDialog
+          onClose={() => setRecordDialogOpen(false)}
+          onUseRecording={(recording) => {
+            selectFile(recording);
+            setRecordDialogOpen(false);
+          }}
+        />
+      )}
 
       {activeUploadId && (
         <section

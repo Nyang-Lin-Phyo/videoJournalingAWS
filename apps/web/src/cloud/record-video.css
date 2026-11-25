@@ -1,0 +1,18 @@
+.record-dialog { width: min(92vw, 800px); height: auto; max-height: 94svh; }
+.record-description { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: #766a64; }
+.record-body { display: grid; gap: 16px; padding-top: 18px; }
+.record-video-frame { background: #281d1c; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; display: grid; place-items: center; min-height: 180px; }
+.record-video-frame video { width: 100%; height: 100%; display: block; object-fit: contain; max-height: 50svh; }
+.record-video-frame video[aria-label='Live camera preview'] { transform: scaleX(-1); object-fit: cover; }
+.record-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; color: #f0ded5; font-size: 14px; }
+.record-status { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.record-status strong { margin-left: auto; font-variant-numeric: tabular-nums; }
+.record-dot { height: 10px; width: 10px; border-radius: 50%; background: #b63738; animation: record-pulse 1s infinite alternate; }
+@keyframes record-pulse { to { opacity: .4; } }
+.record-error { border: 1px solid #b63738; padding: 12px; border-radius: 8px; font-size: 13px; }
+.record-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.record-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.record-privacy { display: flex; gap: 7px; align-items: center; font-size: 12px; color: #766a64; }
+.upload-choice-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+@media (max-width: 680px) { .record-dialog { width: 100%; max-height: 94svh; } .record-video-frame { min-height: 140px; } .record-actions button { flex: 1; } }
+@media (prefers-reduced-motion: reduce) { .record-dot { animation: none; } }
