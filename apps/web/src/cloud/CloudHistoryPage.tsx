@@ -220,7 +220,10 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted, onOpenBooks, o
       setJumpTarget(all.length ? { kind: "day", day: selectedDay ?? localDayKey(all.reduce((latest, item) =>
         Date.parse(item.created_at) > Date.parse(latest.created_at) ? item : latest).created_at) } : null);
       setMode("timeline");
-      window.requestAnimationFrame(showHeader);
+      // The layout effect below handles scrolling to a journal day. A second
+      // requestAnimationFrame(showHeader) would override that jump and take the
+      // reader back to the top of the page.
+      if (!all.length) window.requestAnimationFrame(showHeader);
     } catch (error) {
       setMonthError({ month, message: error instanceof Error ? error.message : "Unable to open this month." });
     } finally {
@@ -500,8 +503,14 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted, onOpenBooks, o
     const target = Array.from(timelineRef.current?.querySelectorAll<HTMLElement>("[data-timeline-day]") ?? [])
       .find(element => element.dataset.timelineDay === day);
     if (!target) return;
-    const desired = Math.max(0, window.scrollY + target.getBoundingClientRect().top - 94);
-    window.scrollTo({ top: desired, behavior: "instant" });
+    // Place the clicked day's node at the same 60%-viewport reading head
+    // used by the timeline progress line. The line then ends at that date.
+    const node = target.querySelector<HTMLElement>(".tl-node");
+    const rect = (node ?? target).getBoundingClientRect();
+    const nodeCenter = rect.top + rect.height / 2;
+    const desired = Math.max(0, window.scrollY + nodeCenter - window.innerHeight * 0.6);
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: desired, behavior: reducedMotion ? "instant" : "smooth" });
     visibleTimelineMonth.current = monthOfDay(day!);
     setJumpTarget(null);
   }, [active, mode, jumpTarget, timeline, timelineRef]);

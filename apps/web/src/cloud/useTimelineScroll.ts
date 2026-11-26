@@ -49,7 +49,9 @@ export function useTimelineScroll<T extends HTMLElement>(itemCount: number) {
     let frame = 0;
     const update = () => {
       frame = 0;
-      const rect = root.getBoundingClientRect();
+      // Measure the actual spine rather than the outer timeline, whose top
+      // and bottom padding differ. This makes the fill end at the reading head.
+      const rect = (root.querySelector<HTMLElement>(".tl-spine") ?? root).getBoundingClientRect();
       // The "reading head" sits 60% of the way down the viewport.
       const head = window.innerHeight * 0.6;
       const atPageEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
