@@ -44,6 +44,7 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
   const [streak, setStreak] = useState<StreakSummary | null>(null);
   const [streakError, setStreakError] = useState<string | null>(null);
   const [streakRewardsOpen, setStreakRewardsOpen] = useState(false);
+  const [streakHelpOpen, setStreakHelpOpen] = useState(false);
   const [buyingFreeze, setBuyingFreeze] = useState(false);
   const [freezeMessage, setFreezeMessage] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -202,7 +203,11 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
             aria-expanded={streakRewardsOpen}
             aria-controls="streak-rewards"
             onClick={() => {
-              setStreakRewardsOpen(value => !value);
+              setStreakRewardsOpen(value => {
+                const next = !value;
+                if (!next) setStreakHelpOpen(false);
+                return next;
+              });
               setFreezeMessage("");
             }}
           >
@@ -229,14 +234,36 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
           {streakRewardsOpen && (
             <section id="streak-rewards" className="streak-rewards" aria-label="Streak rewards">
               <div className="streak-rewards-heading">
-                <h2>Streak rewards</h2>
-                <button type="button" className="settings-close" aria-label="Close rewards" onClick={() => setStreakRewardsOpen(false)}>
+                <div className="streak-rewards-titleline">
+                  <h2>Streak rewards</h2>
+                  <button
+                    type="button"
+                    className="streak-help-button"
+                    aria-label="How streaks and freezes work"
+                    aria-expanded={streakHelpOpen}
+                    aria-controls="streak-help-explainer"
+                    onClick={event => {
+                      event.stopPropagation();
+                      setStreakHelpOpen(value => !value);
+                    }}
+                  >
+                    ?
+                  </button>
+                </div>
+                <button type="button" className="settings-close" aria-label="Close rewards" onClick={() => { setStreakRewardsOpen(false); setStreakHelpOpen(false); }}>
                   <Icon name="close" size={17} />
                 </button>
               </div>
               <p className="streak-rewards-balance">
                 {streak?.points ?? "—"} points · {streak?.freezes ?? 0} freeze{streak?.freezes === 1 ? "" : "s"} owned
               </p>
+              {streakHelpOpen && (
+                <div id="streak-help-explainer" className="streak-help-panel" role="note" aria-live="polite">
+                  <p><strong>Streaks</strong> grow when you save at least one journal on a calendar day. Multiple uploads on the same day still count as one streak day and earn one point.</p>
+                  <p><strong>Miss a day?</strong> If you own a freeze, the next successful upload will automatically spend one freeze to protect that missed day so your streak keeps going.</p>
+                  <p><strong>Freezes</strong> cost {streak?.freeze_cost ?? 7} points each. A frozen day protects the streak but does <em>not</em> earn a point.</p>
+                </div>
+              )}
               {streakError && (
                 <button
                   type="button"
@@ -332,7 +359,7 @@ export function CloudIngestApp({ accountEmail, onSignOut, onAccountDeleted }: Cl
             />
           </div>
           <div style={{ display: view === "history" ? "block" : "none" }}>
-            <CloudHistoryPage active={view === "history"} refreshKey={refreshKey} onOpenBooks={()=>setView("books")} onEditPage={createdAt => { setPageDayKey(localDayKey(createdAt, timezone)); setView("page"); }} onDeleted={() => { setUploadRevision(n => n + 1); setRefreshKey(n => n + 1); }} />
+            <CloudHistoryPage active={view === "history"} refreshKey={refreshKey} streak={streak} onOpenBooks={()=>setView("books")} onEditPage={createdAt => { setPageDayKey(localDayKey(createdAt, timezone)); setView("page"); }} onDeleted={() => { setUploadRevision(n => n + 1); setRefreshKey(n => n + 1); }} />
           </div>
           {view === "page" && <JournalPageEditor key={pageDayKey} dayKey={pageDayKey} timezone={timezone} onBack={() => setView("history")} />}
           {view === "interests" && (

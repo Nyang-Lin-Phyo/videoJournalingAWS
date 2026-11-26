@@ -840,6 +840,9 @@ def streak_summary(owner, requested_timezone='UTC'):
         'freeze_cost': STREAK_FREEZE_COST,
         'uploaded_today': uploaded_today,
         'freeze_pending': freeze_pending,
+        'timezone': zone_name,
+        'today_local_date': today.isoformat(),
+        'frozen_local_dates': list(item.get('frozenLocalDates', [])) if item else [],
     }
 
 

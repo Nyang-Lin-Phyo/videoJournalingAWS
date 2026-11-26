@@ -3,7 +3,7 @@ import { ErrorNotice } from "../components/Feedback";
 import { Icon } from "../components/Icon";
 import { ReflectionPanel } from "./ReflectionPanel";
 import { TranscriptPanel } from "../components/TranscriptPanel";
-import type { AnalysisResult, JournalSummary } from "./analysisApi";
+import type { AnalysisResult, JournalSummary, StreakSummary } from "./analysisApi";
 import { useCloudEnvironment } from "./CloudEnvironment";
 import { useTimelineScroll } from "./useTimelineScroll";
 import { DayStackDialog } from "./DayStackDialog";
@@ -19,8 +19,8 @@ const BRANCH_OFFSETS = [0.05, 0.24, 1, 0.12, 0.68, 0.06, 0.32, 0.55, 0.14];
 
 const dayKey = localDayKey;
 
-export function CloudHistoryPage({ active, refreshKey, onDeleted, onOpenBooks, onEditPage }: {
-  active: boolean; refreshKey: number; onDeleted?: () => void; onOpenBooks?: () => void; onEditPage?: (createdAt: string) => void;
+export function CloudHistoryPage({ active, refreshKey, onDeleted, onOpenBooks, onEditPage, streak }: {
+  active: boolean; refreshKey: number; onDeleted?: () => void; onOpenBooks?: () => void; onEditPage?: (createdAt: string) => void; streak?: StreakSummary | null;
 }) {
   const { userSub, accessToken: token, services } = useCloudEnvironment();
   const { deleteJournal, fetchAnalysis, fetchJournals, fetchJournalMonth, fetchVideoUrl, renameJournal } = services;
@@ -639,6 +639,7 @@ export function CloudHistoryPage({ active, refreshKey, onDeleted, onOpenBooks, o
         loading={loadingMonth === calendarMonth}
         error={monthError?.month === calendarMonth ? monthError.message : null}
         onSelectDay={day => { void switchToTimeline(day); }}
+        streak={streak ?? null}
       />}
       {mode === "timeline" && emptyMonth && (
         <section className="panel calendar-empty-timeline">

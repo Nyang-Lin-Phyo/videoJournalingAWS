@@ -233,7 +233,11 @@ def test_streak_summary_and_timezone_validation():
     }
     response = results.handler(event, None)
     assert response['statusCode'] == 200
-    assert json.loads(response['body'])['points'] == 4
+    payload = json.loads(response['body'])
+    assert payload['points'] == 4
+    assert payload['timezone'] == 'UTC'
+    assert payload['frozen_local_dates'] == []
+    assert isinstance(payload['today_local_date'], str) and len(payload['today_local_date']) == 10
     event['queryStringParameters'] = {'timezone': '../invalid'}
     assert results.handler(event, None)['statusCode'] == 400
     print('PASS authenticated streak summary and timezone input validation')

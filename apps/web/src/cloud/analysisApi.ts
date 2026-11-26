@@ -253,6 +253,9 @@ export type StreakSummary = {
   freeze_cost: number;
   uploaded_today: boolean;
   freeze_pending: boolean;
+  timezone: string;
+  today_local_date: string;
+  frozen_local_dates: string[];
 };
 
 function parseStreakSummary(value: unknown): StreakSummary {
@@ -270,7 +273,11 @@ function parseStreakSummary(value: unknown): StreakSummary {
     !Number.isSafeInteger(data.freeze_cost) ||
     (data.freeze_cost ?? 0) <= 0 ||
     typeof data.uploaded_today !== "boolean" ||
-    typeof data.freeze_pending !== "boolean"
+    typeof data.freeze_pending !== "boolean" ||
+    typeof data.timezone !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(String(data.today_local_date ?? "")) ||
+    !Array.isArray(data.frozen_local_dates) ||
+    data.frozen_local_dates.some(value => typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
   ) {
     throw new Error("Invalid streak response.");
   }

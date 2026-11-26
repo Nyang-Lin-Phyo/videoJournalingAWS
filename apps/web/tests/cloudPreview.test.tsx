@@ -53,6 +53,9 @@ describe("cloud interface preview", () => {
     const rewards = screen.getByRole("region", { name: "Streak rewards" });
     expect(rewards).toHaveTextContent("0 points");
     expect(within(rewards).getByRole("button", { name: "Buy streak freeze" })).toBeDisabled();
+    fireEvent.click(within(rewards).getByRole("button", { name: "How streaks and freezes work" }));
+    expect(within(rewards).getByText(/Multiple uploads on the same day/)).toBeVisible();
+    expect(within(rewards).getByText(/A frozen day protects the streak/)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("region", { name: "Settings" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeVisible();

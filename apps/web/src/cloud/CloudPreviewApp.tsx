@@ -86,6 +86,9 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
     freeze_cost: 7,
     uploaded_today: false,
     freeze_pending: false,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    today_local_date: new Date().toLocaleDateString("en-CA"),
+    frozen_local_dates: [],
   };
   let lastUploadDay: string | null = null;
   const localDay = (date: Date) => {
@@ -116,6 +119,7 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
       current_streak: currentStreak(),
       uploaded_today: lastUploadDay === today,
       freeze_pending: missed > 0 && missed <= streak.freezes,
+      today_local_date: today,
     };
     return { ...streak };
   };
@@ -132,6 +136,14 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
       const missed = gap - 1;
       if (missed === 0) streak.current_streak += 1;
       else if (missed <= streak.freezes) {
+        const previous = new Date(`${lastUploadDay}T12:00:00`);
+        const frozen = new Set(streak.frozen_local_dates);
+        for (let offset = 1; offset <= missed; offset++) {
+          const missing = new Date(previous);
+          missing.setDate(missing.getDate() + offset);
+          frozen.add(localDay(missing));
+        }
+        streak.frozen_local_dates = [...frozen].sort();
         streak.current_streak += gap;
         streak.freezes -= missed;
       } else streak.current_streak = 1;
@@ -323,6 +335,9 @@ function createPreview(onboarded: boolean): { environment: CloudEnvironment; dis
             freeze_cost: 7,
             uploaded_today: false,
             freeze_pending: false,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+            today_local_date: localDay(new Date()),
+            frozen_local_dates: [],
           };
           return {
             complete: true,
