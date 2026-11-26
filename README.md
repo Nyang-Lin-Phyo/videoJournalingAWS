@@ -1,4 +1,4 @@
-meowd# reverie.
+# reverie.
 
 A private video journal for the days you want to remember.
 
